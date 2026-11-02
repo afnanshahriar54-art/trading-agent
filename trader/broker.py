@@ -51,6 +51,9 @@ class PaperBroker:
     def round_qty(self, symbol: str, qty: float) -> float:
         return qty
 
+    def exits_at_broker(self, symbol: str) -> bool:
+        return False
+
     def value(self, symbol: str, price: float, fx: float | None = None) -> float:
         """What the position adds to equity at `price`."""
         p = self.positions[symbol]

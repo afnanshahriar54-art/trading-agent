@@ -163,10 +163,21 @@ class LiveBroker:
         }
         if pending_order:
             entry["pending_order"] = pending_order
+        if self.broker_side_exits and not self.whole(qty):
+            entry["app_exits"] = True
         self.journal["positions"][symbol] = entry
         self.refresh()
         action = "ORDER SENT (waiting to fill)" if pending_order else "OPEN"
         return self._log(action, symbol, entry["qty"], fill, f"{strategy} (score {score:.0f}) via {self.name}")
+
+    @staticmethod
+    def whole(qty: float) -> bool:
+        return abs(qty - round(qty)) < 1e-9
+
+    def exits_at_broker(self, symbol: str) -> bool:
+        """Does the broker hold this trade's safety net and take-profit? (Not for fractional shares,
+        which Alpaca can't attach exit orders to: the app watches those itself.)"""
+        return self.broker_side_exits and not (self.journal["positions"].get(symbol) or {}).get("app_exits")
 
     def _move_stop(self, symbol: str, stop: float) -> None:
         """Move the broker-side safety-net order (brokers that hold exits override this)."""
@@ -175,7 +186,7 @@ class LiveBroker:
         j = self.journal["positions"].get(symbol)
         if j is None:
             return
-        if self.broker_side_exits and abs(stop - j["stop"]) > 1e-9:
+        if self.exits_at_broker(symbol) and abs(stop - j["stop"]) > 1e-9:
             self._move_stop(symbol, stop)
         j.update(stop=stop, best=best, risk_dist=risk_dist)
         self._save()
@@ -211,7 +222,7 @@ class LiveBroker:
         j = self.journal["positions"].get(symbol)
         if j is None:
             raise BrokerError("This trade wasn't opened by the app, so change it at the broker.")
-        if self.broker_side_exits:
+        if self.exits_at_broker(symbol):
             self._set_exits(symbol, self.positions[symbol]["qty"], stop, target)
         j.update(stop=stop, target=target)
         self._save()

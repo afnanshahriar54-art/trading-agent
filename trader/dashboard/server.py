@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import sys
 import threading
@@ -374,10 +375,14 @@ class App:
         suggested = rm.size(equity, price, stop, f)
 
         def rounded(q: float) -> float:
-            if market in ("us_stocks", "dse"):
-                return float(int(q))
+            """The smallest steps each market really trades in."""
+            if market == "dse":
+                return float(int(q))              # the Dhaka exchange trades whole shares only
+            if market == "us_stocks":
+                # Alpaca buys parts of a share (from $1), but sells short whole shares only.
+                return float(int(q)) if side < 0 else math.floor(q * 1e6) / 1e6
             if margin:
-                return float(int(q // 1000) * 1000)
+                return float(int(q))              # forex: down to 1 unit
             return b.round_qty(symbol, q)
 
         qty = rounded(amount / (price * f) if amount else suggested)
@@ -385,23 +390,44 @@ class App:
         cost = size if side > 0 and not margin else 0.0
         max_risk = equity * rm.cfg.risk_per_trade_pct / 100
         max_size = equity * rm.cfg.max_position_pct / 100
-        ok, why = rm.check_new_trade(0, len(b.positions), equity, b.day_start_equity({symbol: price}, {symbol: f}),
-                                     b.cash, cost, manual=True)
-        if symbol in b.positions or symbol in b.pending:
-            ok, why = False, "You already have a trade open in this. Close it first."
-        elif ok and qty <= 0:
-            ok, why = False, "That amount is too small to buy even one unit."
-        elif ok and risk > max_risk * 1.001:
-            ok, why = False, (f"That amount could lose about {risk:,.0f}, more than your limit of {max_risk:,.0f} "
-                              f"({rm.cfg.risk_per_trade_pct:g}% of the account). Use a smaller amount.")
-        elif ok and size > max_size * 1.001:
-            ok, why = False, f"That's bigger than your limit of {max_size:,.0f} per trade ({rm.cfg.max_position_pct:g}% of the account)."
-        return {"ok": ok, "why": why, "side": side, "qty": qty, "price": price, "price_time": when, "live": live,
+        day_start = b.day_start_equity({symbol: price}, {symbol: f})
+        # Hard stops: things the broker or the app can't do. Everything else is your call: a warning.
+        ok, why = True, "ok"
+        if KILL_SWITCH.exists():
+            ok, why = False, "Trading is paused (the stop switch is on). Switch it off on the Home page."
+        elif symbol in b.positions or symbol in b.pending:
+            ok, why = False, "You already have a trade open in this. Close it first, or close part of it."
+        elif qty <= 0:
+            ok, why = False, {"dse": "The Dhaka exchange only trades whole shares. Enter at least the price of one share.",
+                              "us_stocks": ("Short selling needs at least one whole share." if side < 0
+                                            else "Alpaca's smallest trade is $1.")}.get(market, "That amount is too small for this market.")
+        elif market == "us_stocks" and side > 0 and not qty.is_integer() and size < 0.99:  # $1, less rounding
+            ok, why = False, "Alpaca's smallest trade is $1."
+        elif cost > b.cash:
+            ok, why = False, f"Not enough cash in this account: {cost:,.2f} needed, {b.cash:,.2f} available."
+        warnings = []
+        if ok:
+            if risk > max_risk * 1.001:
+                warnings.append(f"It could lose about {risk:,.0f}, more than your limit of {max_risk:,.0f} "
+                                f"({rm.cfg.risk_per_trade_pct:g}% of the account).")
+            if size > max_size * 1.001:
+                warnings.append(f"It's bigger than your limit of {max_size:,.0f} per trade ({rm.cfg.max_position_pct:g}% of the account).")
+            if len(b.positions) >= rm.cfg.max_open_positions:
+                warnings.append(f"You already have {len(b.positions)} open trades here (your limit is {rm.cfg.max_open_positions}).")
+            day = (equity / day_start - 1) * 100 if day_start else 0
+            if day <= -rm.cfg.daily_loss_limit_pct:
+                warnings.append(f"This account is down {-day:.1f}% today, past your {rm.cfg.daily_loss_limit_pct:g}% daily limit.")
+            if market == "us_stocks" and not qty.is_integer() and mcfg.get("broker") == "alpaca":
+                warnings.append("Part of a share: Alpaca can't hold the safety net for it, so this app watches it "
+                                "(every 30 seconds while open, and at the daily check), not Alpaca around the clock.")
+        return {"ok": ok, "why": why, "warnings": warnings, "side": side, "qty": qty, "price": price,
+                "price_time": when, "live": live,
                 "stop": stop, "size": size, "risk": risk, "risk_pct": risk / equity * 100 if equity else 0,
                 "suggested_size": rounded(suggested) * price * f, "max_risk": max_risk,
                 "units": names.UNITS.get(market, "units"), "currency": CURRENCY.get(market, "USD"),
                 "account": names.BROKERS.get(mcfg.get("broker", "paper")), "fx": f, "protect": cfg.get("protect", {}),
-                **self._target_info(rm.target_price(price, stop, side, qty, f), price, qty, f, mcfg),
+                **self._target_info(rm.target_price(price, stop, side, qty, f), price, qty, f, mcfg,
+                                    whole=float(qty).is_integer()),
                 "odds": self._odds(market, symbol, price, stop, rm.target_price(price, stop, side, qty, f), side, qty, f)}
 
     def _odds(self, market: str, symbol: str, price: float, stop: float, target: float | None, side: int,
@@ -419,21 +445,26 @@ class App:
                 self.odds_cache.pop(next(iter(self.odds_cache)))
         return self.odds_cache[key]
 
-    def _target_info(self, target: float | None, price: float, qty: float, f: float, mcfg: dict) -> dict:
+    def _target_info(self, target: float | None, price: float, qty: float, f: float, mcfg: dict,
+                     whole: bool = True) -> dict:
         """The take-profit price, the gain if it's reached, and whether the broker or this app closes it."""
         if target is None:
             return {"target": None}
-        at_broker = mcfg.get("broker", "paper") in ("alpaca", "oanda")
+        at_broker = mcfg.get("broker", "paper") in ("alpaca", "oanda") and whole
         return {"target": target, "gain": abs(target - price) * qty * f,
                 "target_how": "placed at the broker, closes instantly even when this app is closed" if at_broker
                 else "checked every 30 seconds while this app is open, and at the daily check"}
 
-    def manual_trade(self, market: str, symbol: str, side: int, amount: float | None = None) -> str:
+    def manual_trade(self, market: str, symbol: str, side: int, amount: float | None = None,
+                     accept: bool = False) -> str:
+        """`accept`: you saw the warnings (bigger than your limits, etc.) and want the trade anyway."""
         if self.cfg.get("live_trading"):
             raise BrokerError("Real-money trading is switched off in this version.")
         q = self.manual_quote(market, symbol, side, amount)
         if not q["ok"]:
             raise BrokerError(q["why"])
+        if q["warnings"] and not accept:
+            raise BrokerError("Please confirm the warnings first: " + " ".join(q["warnings"]))
         b = agent.make_broker(market, self.cfg)
         t = b.open(symbol, q["side"], q["qty"], q["price"], q["stop"], agent.MANUAL, 0, q["fx"], q.get("target"))
         what = f"{'bought' if q['side'] > 0 else 'sold short'} {q['qty']:g} {q['units']} of {names.symbol(symbol)}"
@@ -604,7 +635,9 @@ class App:
         part = None
         if percent < 100:
             part = abs(pos["qty"]) * percent / 100
-            if market in ("us_stocks", "dse") or b.margin:
+            if market == "us_stocks" and pos["qty"] > 0:
+                part = math.floor(part * 1e6) / 1e6  # parts of a share are fine when selling what you own
+            elif market in ("us_stocks", "dse") or b.margin:
                 part = float(int(part))  # whole shares / units
             else:
                 part = b.round_qty(symbol, part)
@@ -737,7 +770,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, self.app.manual_quote(body["market"], body["symbol"], body["side"], body.get("amount")))
             if self.path == "/api/manual-trade":
                 with self.app.trade_lock:
-                    msg = self.app.manual_trade(body["market"], body["symbol"], body["side"], body.get("amount"))
+                    msg = self.app.manual_trade(body["market"], body["symbol"], body["side"], body.get("amount"),
+                                                bool(body.get("accept")))
                 return self._send(200, {"message": msg})
             if self.path == "/api/methods":
                 return self._send(200, self.app.change_methods(body))

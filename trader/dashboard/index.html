@@ -299,7 +299,7 @@
 
     <div class="card" style="margin-top:16px">
       <h2>Trade <span id="tpName"></span></h2>
-      <p class="note">Practice money. Your own trades follow the same safety rules as the agent's, and only their safety net closes them. You can also close them yourself under Open trades.</p>
+      <p class="note">Practice money. Trade any amount: parts of a US share (from $1), forex from 1 unit, crypto in small fractions. Dhaka shares are whole shares only. If a trade goes past your safety limits, you'll see a warning and can still place it. Only its safety net or take-profit closes it, or you, under Open trades.</p>
       <div class="actions" style="margin-top:8px">
         <div style="display:flex;gap:4px">
           <button id="tpBuy" class="btn small" onclick="tpSide(1)">Buy</button>
@@ -1043,17 +1043,20 @@ async function tpQuote() {
     <p class="note" style="margin-top:10px">Your limit per trade is ${money(q.max_risk, cur)} of possible loss (${q.risk_pct.toFixed(2)}% of the account used here).
       ${q.target ? `Take-profit ${esc(q.target_how)}.` : "Take-profit is off in Settings."}
       Account: ${esc(q.account)}.${q.live ? "" : " The market looks closed or delayed: a US order waits for the market to open; other practice trades fill at the last price."}</p>
-    ${q.ok ? "" : `<div class="blocked">${esc(q.why)}</div>`}`;
+    ${q.ok ? "" : `<div class="blocked">${esc(q.why)}</div>`}
+    ${q.ok && q.warnings.length ? `<div class="notice info" style="margin-top:10px"><b>Heads up, you can still place it:</b>
+      <ul style="margin:4px 0 0 18px;padding:0">${q.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}`;
   btn.disabled = !q.ok;
-  btn.textContent = `Place practice trade: ${buy ? "buy" : "sell short"} ${qty(q.qty)} ${q.units}`;
+  btn.textContent = `${q.warnings.length ? "Place anyway" : "Place practice trade"}: ${buy ? "buy" : "sell short"} ${qty(q.qty)} ${q.units}`;
 }
 async function tpPlace() {
   if (!tpLast) return;
   const {market, symbol, amount, q} = tpLast;
   const name = document.getElementById("tpName").textContent;
   if (!confirm(`Place this practice trade?\n\n${q.side > 0 ? "Buy" : "Sell short"} ${qty(q.qty)} ${q.units} of ${name} at about ${price(q.price)}\nSafety net: ${price(q.stop)}\nMost you'd likely lose: ${money(q.risk, q.currency)}` +
-               (q.target ? `\nTake profit: ${price(q.target)} (about +${money(q.gain, q.currency)})` : ""))) return;
-  try { toast((await api("/api/manual-trade", {market, symbol, side: q.side, amount})).message); }
+               (q.target ? `\nTake profit: ${price(q.target)} (about +${money(q.gain, q.currency)})` : "") +
+               (q.warnings.length ? `\n\nWarnings:\n- ${q.warnings.join("\n- ")}` : ""))) return;
+  try { toast((await api("/api/manual-trade", {market, symbol, side: q.side, amount, accept: q.warnings.length > 0})).message); }
   catch (e) { toast(e.message, false); }
   loadChart(true); tpQuote();
 }

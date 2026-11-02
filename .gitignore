@@ -25,3 +25,4 @@ dist/
 installer/
 *.exe
 *.log
+tests/.amounttest/

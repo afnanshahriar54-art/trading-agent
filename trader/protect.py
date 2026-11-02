@@ -62,7 +62,7 @@ def manage(broker, prices: dict[str, float], fxs: dict[str, float], protect: dic
                               + (" (break-even)" if abs(stop - pos["entry"]) < 1e-9 else ""))
             broker.update_stop(sym, stop, best, r)
             pos = broker.positions[sym]
-        if close_hits and not getattr(broker, "broker_side_exits", False):
+        if close_hits and not broker.exits_at_broker(sym):
             reason = price_exit(pos, price)
             if reason:
                 t = broker.close(sym, price, reason, fxs.get(sym))

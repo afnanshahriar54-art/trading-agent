@@ -74,6 +74,15 @@ class AlpacaPaper(LiveBroker):
         return out
 
     def _submit(self, symbol, side, qty, stop, target=None):
+        if not self.whole(qty):
+            if side < 0:
+                raise BrokerError("Alpaca can't sell short part of a share. Use a whole number of shares.")
+            # Part of a share: a plain market order for today. The app itself watches its safety net
+            # and take-profit (every 30 seconds while open, and at the daily check).
+            order = self._req("POST", "/v2/orders", json={
+                "symbol": self._sym(symbol), "qty": f"{qty:.6f}".rstrip("0").rstrip("."),
+                "side": "buy", "type": "market", "time_in_force": "day"})
+            return self._wait(order)
         body = {
             "symbol": self._sym(symbol), "qty": str(int(qty)),
             "side": "buy" if side > 0 else "sell", "type": "market", "time_in_force": "gtc",
@@ -84,7 +93,9 @@ class AlpacaPaper(LiveBroker):
         if target:
             body["order_class"] = "bracket"
             body["take_profit"] = {"limit_price": f"{target:.2f}"}
-        order = self._req("POST", "/v2/orders", json=body)
+        return self._wait(self._req("POST", "/v2/orders", json=body))
+
+    def _wait(self, order: dict):
         for _ in range(5):  # market orders fill within seconds while the market is open
             if order["status"] == "filled":
                 return float(order["filled_qty"]), float(order["filled_avg_price"]), None
@@ -128,13 +139,16 @@ class AlpacaPaper(LiveBroker):
         if part is None:
             order = self._req("DELETE", f"/v2/positions/{sym}")
         else:
-            order = self._req("DELETE", f"/v2/positions/{sym}", params={"qty": str(int(part))})
+            order = self._req("DELETE", f"/v2/positions/{sym}", params={"qty": f"{part:.6f}".rstrip("0").rstrip(".")})
             j = self.journal["positions"].get(symbol)
-            remaining = qty - (1 if qty > 0 else -1) * int(part)
-            if j and remaining:  # keep the rest protected
-                self._place_exits(symbol, remaining, j["stop"], j.get("target"))
+            remaining = qty - (1 if qty > 0 else -1) * part
+            if j and self.whole(remaining) and round(remaining):  # keep the rest protected at Alpaca
+                j.pop("app_exits", None)
+                self._place_exits(symbol, round(remaining), j["stop"], j.get("target"))
+            elif j and remaining:  # part of a share left: the app watches it
+                j["app_exits"] = True
         return float(order.get("filled_avg_price") or 0)
 
-    def _set_exits(self, symbol, qty, stop, target):
+    def _set_exits(self, symbol, qty, stop, target):  # only called while Alpaca holds the exits
         self._cancel_exits(self._sym(symbol))
         self._place_exits(symbol, qty, stop, target)

@@ -79,8 +79,8 @@ print("  ", app.manual_trade("crypto", "ETH-USD", 1, 2000))
 pos = br.PaperBroker("crypto", 100000, 10, 10).positions["ETH-USD"]
 assert pos["strategy"] == ag.MANUAL
 too_big = app.manual_quote("crypto", "BTC-USD", 1, 95000)
-assert not too_big["ok"]
-print(f"   too big refused: {too_big['why']}")
+assert too_big["ok"] and too_big["warnings"]  # your call: a warning, not a block
+print(f"   too big warns: {' '.join(too_big['warnings'])}")
 try:
     app.manual_quote("crypto", "BTC-USD", -1)
     raise AssertionError("short selling crypto should be refused")
