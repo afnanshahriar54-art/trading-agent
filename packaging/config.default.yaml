@@ -33,7 +33,8 @@ markets:
     allow_short: true
     margin: true        # P&L-based accounting, converted from the quote currency to USD
     fee_bps: 1
-    slippage_bps: 1
+    slippage_bps: 2     # spread buffer: wider at quiet hours and around news
+    carry_pct_year: 2.0 # overnight financing (swap) on the trade's size, a cautious average
     symbols: [EURUSD=X, GBPUSD=X, USDJPY=X, AUDUSD=X, USDCHF=X]
   dse:                  # Dhaka Stock Exchange (needs the optional `bdshare` package)
     broker: paper       # no broker API; Phase 3 adds a review-only mode

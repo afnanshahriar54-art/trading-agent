@@ -74,22 +74,33 @@ class BinanceTestnet(LiveBroker):
         q = math.floor(qty / lot["step"]) * lot["step"]
         return round(q, 8) if q >= lot["min_qty"] else 0.0
 
-    def _order(self, symbol: str, side: str, qty: float) -> tuple[float, float]:
+    def _order(self, symbol: str, side: str, qty: float, cid: str | None = None) -> tuple[float, float]:
         q = self.round_qty(symbol, qty)
         if q <= 0:
             raise BrokerError(f"{symbol}: quantity {qty:g} is below Binance's minimum")
         resp = self._signed("POST", "/api/v3/order", {
             "symbol": self.pair(symbol)[0], "side": side, "type": "MARKET", "quantity": f"{q:.8f}".rstrip("0").rstrip("."),
+            **({"newClientOrderId": cid} if cid else {}),
         })
         filled = float(resp.get("executedQty", 0))
         quote_spent = float(resp.get("cummulativeQuoteQty", 0))  # Binance's spelling
         return filled, (quote_spent / filled if filled else 0.0)
 
-    def _submit(self, symbol, side, qty, stop, target=None):  # stop/target checked by the app
+    def _submit(self, symbol, side, qty, stop, target=None, cid=None):  # stop/target checked by the app
         if side < 0:
             raise BrokerError("Binance spot cannot sell short")
-        filled, price = self._order(symbol, "BUY", qty)
+        filled, price = self._order(symbol, "BUY", qty, cid)
         return filled, price, None
+
+    def _order_status(self, cid: str) -> str | None:
+        sym = next((s for s, j in self.journal["positions"].items() if j.get("cid") == cid), None)
+        if sym is None:
+            return None
+        try:
+            o = self._signed("GET", "/api/v3/order", {"symbol": self.pair(sym)[0], "origClientOrderId": cid})
+        except BrokerError as e:
+            return "gone" if "-2013" in str(e) else None  # -2013: order does not exist
+        return {"FILLED": "filled", "PARTIALLY_FILLED": "filled", "NEW": "open"}.get(o.get("status"), "gone")
 
     def _close(self, symbol, qty, part=None):
         held = self._balances().get(self.pair(symbol)[1], 0.0)

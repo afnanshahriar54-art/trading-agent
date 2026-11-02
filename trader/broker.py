@@ -14,7 +14,9 @@ from __future__ import annotations
 import datetime as dt
 import json
 
+from .live.base import BrokerError
 from .paths import HOME
+from .risk import order_problem
 
 STATE_DIR = HOME / "paper_accounts"
 
@@ -78,6 +80,9 @@ class PaperBroker:
     # --- orders ----------------------------------------------------------
     def open(self, symbol: str, side: int, qty: float, price: float, stop: float,
              strategy: str, score: float, fx: float = 1.0, target: float | None = None) -> dict:
+        problem = order_problem(side, qty, price, stop, fx, target)
+        if problem:
+            raise BrokerError(f"Order refused: {problem}.")
         fill = price * (1 + side * self.slip)
         signed_qty = side * qty
         fee = abs(signed_qty) * fill * fx * self.fee

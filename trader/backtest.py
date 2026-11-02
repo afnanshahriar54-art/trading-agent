@@ -23,15 +23,17 @@ class Metrics:
                 f"max DD {self.max_drawdown:.0%}, {self.trades} trades, win {self.win_rate:.0%}")
 
 
-def run(df: pd.DataFrame, pos: pd.Series, fee_bps: float, slippage_bps: float) -> tuple[Metrics, pd.Series]:
-    """Return metrics and the equity curve (starting at 1.0)."""
+def run(df: pd.DataFrame, pos: pd.Series, fee_bps: float, slippage_bps: float,
+        carry_pct_year: float = 0.0) -> tuple[Metrics, pd.Series]:
+    """Return metrics and the equity curve (starting at 1.0). `carry_pct_year`: overnight financing
+    charged on the position's size for every day it's held (forex swap), as % per year."""
     # Bars per year from the data itself: ~252 for stocks, ~260 for forex, 365 for crypto.
     span_years = max((df.index[-1] - df.index[0]).days / 365.25, 1e-9)
     periods_per_year = len(df) / span_years
     held = pos.shift(1).fillna(0)                 # decide at close, hold from next bar
     rets = df["close"].pct_change().fillna(0)
     turnover = held.diff().abs().fillna(held.abs())
-    cost = turnover * (fee_bps + slippage_bps) / 10_000
+    cost = turnover * (fee_bps + slippage_bps) / 10_000 + held.abs() * carry_pct_year / 100 / periods_per_year
     strat = held * rets - cost
     equity = (1 + strat).cumprod()
 

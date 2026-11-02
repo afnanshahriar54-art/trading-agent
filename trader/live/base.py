@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import uuid
 from pathlib import Path
 
 import requests
@@ -68,14 +69,20 @@ class LiveBroker:
         raise NotImplementedError
 
     def _submit(self, symbol: str, side: int, qty: float, stop: float,
-                target: float | None = None) -> tuple[float, float, str | None]:
-        """Place a market order (with a broker-side stop and take-profit where supported).
+                target: float | None = None, cid: str | None = None) -> tuple[float, float, str | None]:
+        """Place a market order (with a broker-side stop and take-profit where supported), tagged
+        with our own order id `cid` so it can be found again if the answer gets lost.
         Returns (filled qty, fill price or 0, order id if still waiting to fill else None)."""
         raise NotImplementedError
 
     def _order_open(self, order_id: str) -> bool:
         """True while an order is still waiting to fill (e.g. placed outside market hours)."""
         return False
+
+    def _order_status(self, cid: str) -> str | None:
+        """Look up an order by our own tag: "open", "filled", "gone" (never placed, rejected or
+        cancelled), or None when the broker can't tell us."""
+        return None
 
     def _close(self, symbol: str, qty: float, part: float | None = None) -> float:
         """Flatten the position (signed `qty`), or only `part` units of it.
@@ -95,6 +102,18 @@ class LiveBroker:
             held = self._broker_positions()
             journal = self.journal["positions"]
             for sym in [s for s in journal if s not in held]:
+                cid = journal[sym].get("uncertain")
+                if cid:  # we sent it but never heard back: ask the broker what became of it
+                    status = self._order_status(cid)
+                    age = dt.datetime.now() - dt.datetime.fromisoformat(journal[sym]["opened"])
+                    if status == "open" or (status is None and age < dt.timedelta(minutes=15)):
+                        continue  # still on its way: keep blocking a second order for this asset
+                    if status == "filled":
+                        continue  # filled; its position shows up at the broker shortly
+                    self._log("ORDER NOT PLACED", sym, journal[sym]["qty"], 0.0,
+                              "the broker has no record of it, so nothing was bought or sold")
+                    del journal[sym]
+                    continue
                 order_id = journal[sym].get("pending_order")
                 if order_id and self._order_open(order_id):
                     continue  # still waiting to fill
@@ -133,7 +152,7 @@ class LiveBroker:
     def pending(self) -> set[str]:
         """Symbols with an entry order sent but not yet filled."""
         self._state()
-        return {s for s, j in self.journal["positions"].items() if j.get("pending_order")}
+        return {s for s, j in self.journal["positions"].items() if j.get("pending_order") or j.get("uncertain")}
 
     def equity(self, prices: dict[str, float], fxs: dict[str, float] | None = None) -> float:
         acct = self._state()["account"]
@@ -154,13 +173,38 @@ class LiveBroker:
 
     def open(self, symbol: str, side: int, qty: float, price: float, stop: float,
              strategy: str, score: float, fx: float = 1.0, target: float | None = None) -> dict:
-        filled, fill, pending_order = self._submit(symbol, side, qty, stop, target)
-        fill = fill or price
+        from ..risk import order_problem
+        problem = order_problem(side, qty, price, stop, fx, target)
+        if problem:
+            raise BrokerError(f"Order refused: {problem}.")
+        if symbol in self.journal["positions"]:
+            raise BrokerError(f"{symbol}: an order for this is already open or still being checked.")
+        # Write the order down BEFORE sending it, under our own tag. If the PC crashes or the
+        # answer gets lost, the app still knows the order may exist, won't send it twice, and
+        # asks the broker about it (by that tag) the next time it looks at the account.
+        cid = "ta" + uuid.uuid4().hex[:24]
         entry = {
-            "qty": side * (filled or qty), "entry": fill, "stop": stop, "stop0": stop, "target": target,
-            "strategy": strategy, "fx": fx,
-            "score": score, "opened": dt.datetime.now().isoformat(timespec="seconds"),
+            "qty": side * qty, "entry": price, "stop": stop, "stop0": stop, "target": target,
+            "strategy": strategy, "fx": fx, "score": score, "cid": cid, "uncertain": cid,
+            "opened": dt.datetime.now().isoformat(timespec="seconds"),
         }
+        self.journal["positions"][symbol] = entry
+        self._save()
+        try:
+            filled, fill, pending_order = self._submit(symbol, side, qty, stop, target, cid=cid)
+        except BrokerError:
+            # The broker answered with a clear "no": nothing was placed.
+            self.journal["positions"].pop(symbol, None)
+            self._save()
+            raise
+        except Exception as e:
+            # No clear answer (timeout, lost connection): it may or may not have gone through.
+            self.refresh()
+            raise BrokerError(f"No clear answer from the broker ({type(e).__name__}). The app will check "
+                              "whether this order went through before allowing another one in this asset.") from e
+        entry.pop("uncertain")
+        fill = fill or price
+        entry.update(qty=side * (filled or qty), entry=fill)
         if pending_order:
             entry["pending_order"] = pending_order
         if self.broker_side_exits and not self.whole(qty):

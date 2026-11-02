@@ -64,6 +64,21 @@ class Candidate:
         return "BUY" if self.side > 0 else "SELL SHORT"
 
 
+SCORE_GROUPS = [("Under 40", 0, 40), ("40 to 54", 40, 55), ("55 to 69", 55, 70), ("70 and up", 70, 1000)]
+
+
+def by_score(rows: list[dict], result: str) -> list[dict]:
+    """Results grouped by confidence score: how many, how often they made money, average result.
+    The score is a ranking, not a chance of winning; this is how to check what it's worth."""
+    out = []
+    for label, lo, hi in SCORE_GROUPS:
+        xs = [r[result] for r in rows if lo <= r["score"] < hi]
+        if xs:
+            out.append({"group": label, "count": len(xs), "win_rate": sum(x > 0 for x in xs) / len(xs),
+                        "avg": sum(xs) / len(xs)})
+    return out
+
+
 def analyze_symbol(market: str, symbol: str, mcfg: dict, cfg: dict,
                    strategies: list[Strategy] | None = None, active: set[str] | None = None) -> SymbolAnalysis:
     """`strategies`: every method to analyse (default: all available); `active`: the switched-on ones."""
@@ -74,8 +89,9 @@ def analyze_symbol(market: str, symbol: str, mcfg: dict, cfg: dict,
     views = []
     for strat in strategies:
         pos = positions(strat, df, mcfg["allow_short"])
-        full, _ = backtest.run(df, pos, mcfg["fee_bps"], mcfg["slippage_bps"])
-        recent, _ = backtest.run(df.iloc[-recent_n:], pos.iloc[-recent_n:], mcfg["fee_bps"], mcfg["slippage_bps"])
+        carry = mcfg.get("carry_pct_year", 0)
+        full, _ = backtest.run(df, pos, mcfg["fee_bps"], mcfg["slippage_bps"], carry)
+        recent, _ = backtest.run(df.iloc[-recent_n:], pos.iloc[-recent_n:], mcfg["fee_bps"], mcfg["slippage_bps"], carry)
         changed = pos.ne(pos.shift()).to_numpy().nonzero()[0]
         age = len(pos) - 1 - (changed[-1] if len(changed) else 0)
         views.append(StrategyView(strat, int(pos.iloc[-1]), int(age), full, recent))

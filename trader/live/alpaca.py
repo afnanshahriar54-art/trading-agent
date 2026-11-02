@@ -73,7 +73,7 @@ class AlpacaPaper(LiveBroker):
             out[p["symbol"].replace(".", "-")] = (qty, float(p["avg_entry_price"]))
         return out
 
-    def _submit(self, symbol, side, qty, stop, target=None):
+    def _submit(self, symbol, side, qty, stop, target=None, cid=None):
         if not self.whole(qty):
             if side < 0:
                 raise BrokerError("Alpaca can't sell short part of a share. Use a whole number of shares.")
@@ -81,7 +81,7 @@ class AlpacaPaper(LiveBroker):
             # and take-profit (every 30 seconds while open, and at the daily check).
             order = self._req("POST", "/v2/orders", json={
                 "symbol": self._sym(symbol), "qty": f"{qty:.6f}".rstrip("0").rstrip("."),
-                "side": "buy", "type": "market", "time_in_force": "day"})
+                "side": "buy", "type": "market", "time_in_force": "day", **({"client_order_id": cid} if cid else {})})
             return self._wait(order)
         body = {
             "symbol": self._sym(symbol), "qty": str(int(qty)),
@@ -90,6 +90,8 @@ class AlpacaPaper(LiveBroker):
             # instantly even while this app is closed. Bracket = safety net + take-profit.
             "order_class": "oto", "stop_loss": {"stop_price": f"{stop:.2f}"},
         }
+        if cid:
+            body["client_order_id"] = cid
         if target:
             body["order_class"] = "bracket"
             body["take_profit"] = {"limit_price": f"{target:.2f}"}
@@ -112,6 +114,16 @@ class AlpacaPaper(LiveBroker):
                 if leg.get("type") in ("stop", "stop_limit") and leg.get("status") in ("new", "accepted", "held", "pending_replace"):
                     self._req("PATCH", f"/v2/orders/{leg['id']}", json={"stop_price": f"{stop:.2f}"})
                     return
+
+    def _order_status(self, cid: str) -> str | None:
+        r = self.http.get(BASE + "/v2/orders:by_client_order_id", params={"client_order_id": cid}, timeout=20)
+        if r.status_code == 404:
+            return "gone"
+        if r.status_code >= 400:
+            return None
+        status = r.json().get("status")
+        return ("filled" if status in ("filled", "partially_filled") else
+                "gone" if status in ("canceled", "expired", "rejected", "done_for_day") else "open")
 
     def _order_open(self, order_id: str) -> bool:
         return self._req("GET", f"/v2/orders/{order_id}")["status"] not in (

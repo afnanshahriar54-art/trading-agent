@@ -5,9 +5,11 @@ find fresh signals, score them (the same formula as live), size them (the same r
 rules), and open/close trades in a simulated account per market. Then it compares the
 result with simply buying and holding the same assets.
 
-Simplifications, stated in the report: trades fill at the day's closing price plus
-slippage and fees; stops are checked on closing prices; the daily loss limit is not
-applied (it needs intraday checks).
+Simplifications, stated in the report: trades open at the day's closing price plus
+slippage and fees. Safety nets and take-profits are checked against each day's high and
+low (a gap past the safety net fills at the open, the worse price); if both are touched
+on one day, the safety net is assumed to come first. Forex pays overnight financing.
+The daily loss limit is not applied (it needs intraday checks).
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ import pandas as pd
 from . import backtest, data, fx, methods, names
 from . import indicators as ind
 from .protect import new_stop, price_exit
-from .analyzer import score_parts, total
+from .analyzer import score_parts, total, by_score
 from .broker import PaperBroker
 from .paths import HOME
 from .risk import RiskConfig, RiskManager
@@ -40,6 +42,9 @@ class History:
     """Everything the agent would have known about one symbol on each past day."""
     symbol: str
     index: pd.DatetimeIndex
+    open: np.ndarray
+    high: np.ndarray
+    low: np.ndarray
     close: np.ndarray
     atr: np.ndarray
     adx: np.ndarray
@@ -58,14 +63,15 @@ def prepare(symbol: str, market: str, mcfg: dict, cfg: dict, strategies: list[St
     ppy = len(df) / max((df.index[-1] - df.index[0]).days / 365.25, 1e-9)
     rets = df.close.pct_change().fillna(0)
     cost_rate = (mcfg["fee_bps"] + mcfg["slippage_bps"]) / 10_000
+    carry = mcfg.get("carry_pct_year", 0) / 100 / ppy
     n = cfg["recent_days"]
-    h = History(symbol, df.index, df.close.to_numpy(), ind.atr(df).to_numpy(), ind.adx(df).fillna(0).to_numpy(),
+    h = History(symbol, df.index, df.open.to_numpy(), df.high.to_numpy(), df.low.to_numpy(), df.close.to_numpy(), ind.atr(df).to_numpy(), ind.adx(df).fillna(0).to_numpy(),
                 _sharpe(rets.expanding().mean(), rets.expanding().std().fillna(0), ppy), {}, {}, {}, {}, {}, {},
                 strategies)
     for s in strategies:
         pos = positions(s, df, mcfg["allow_short"])
         held = pos.shift(1).fillna(0)
-        strat = held * rets - held.diff().abs().fillna(held.abs()) * cost_rate
+        strat = held * rets - held.diff().abs().fillna(held.abs()) * cost_rate - held.abs() * carry
         equity = (1 + strat).cumprod()
         h.target[s.name] = pos.to_numpy().astype(int)
         h.age[s.name] = pos.groupby(pos.ne(pos.shift()).cumsum()).cumcount().to_numpy()
@@ -152,6 +158,8 @@ def simulate(market: str, cfg: dict, progress=None, strategies: list[Strategy] |
     opened: dict[str, tuple] = {}
     trades, curve, invested = [], [], []
     reentry, stopped = cfg.get("reentry", {}), {}
+    carry = mcfg.get("carry_pct_year", 0) / 100 / 365   # per calendar day held
+    prev_day = None
     if progress:
         progress(f"Replaying {names.market(market)} day by day")
 
@@ -160,24 +168,35 @@ def simulate(market: str, cfg: dict, progress=None, strategies: list[Strategy] |
         for s, i in today.items():
             last_price[s] = hist[s].close[i]
         fxs = {s: _fx(s, p, margin) for s, p in last_price.items()}
+        if carry and prev_day is not None:  # overnight financing on open positions (forex swap)
+            days = (d - prev_day).days
+            broker.state["cash"] -= sum(abs(p["qty"]) * last_price[s] * fxs[s] * carry * days
+                                        for s, p in broker.positions.items())
+        prev_day = d
 
-        # 1. Exits: stop hit on the close, or the opening method no longer agrees.
+        # 1. Exits: safety net or take-profit touched during the day, or the method changed its mind.
         for s, pos in list(broker.positions.items()):
             if s not in today:
                 continue
             h, i = hist[s], today[s]
             side = 1 if pos["qty"] > 0 else -1
-            price = h.close[i]
-            moved = new_stop(pos, price, cfg.get("protect", {}))  # profit protection, as live
-            if moved:
-                broker.update_stop(s, *moved)
-                pos = broker.positions[s]
-            hit = price_exit(pos, price)  # same check as live: safety net, then take-profit
-            reason = None
-            if hit:
-                reason = "safety net hit" if hit.startswith("stop") else "take-profit reached"
-            elif h.target[pos["strategy"]][i] != side:
-                reason = "method changed its mind"
+            price, reason = h.close[i], None
+            o, good, bad = h.open[i], (h.high[i] if side > 0 else h.low[i]), (h.low[i] if side > 0 else h.high[i])
+            stop, target = pos["stop"], pos.get("target")
+            if side * (bad - stop) <= 0:            # the day's worst price reached the safety net
+                price, reason = (o if side * (o - stop) <= 0 else stop), "safety net hit"
+            elif target and side * (good - target) >= 0:
+                price, reason = (o if side * (o - target) >= 0 else target), "take-profit reached"
+            else:
+                moved = new_stop(pos, good, cfg.get("protect", {}))  # profit protection, as live
+                if moved:
+                    broker.update_stop(s, *moved)
+                    pos = broker.positions[s]
+                hit = price_exit(pos, price)  # the moved safety net, checked at the close
+                if hit:
+                    reason = "safety net hit" if hit.startswith("stop") else "take-profit reached"
+                elif h.target[pos["strategy"]][i] != side:
+                    reason = "method changed its mind"
             if reason:
                 t = broker.close(s, price, reason, fxs[s])
                 d0, score = opened.pop(s)
@@ -272,6 +291,7 @@ def _summary(market, eq, bench, bench_name, trades, broker, n_assets) -> dict:
         "avg_days": float(np.mean([t["days"] for t in trades])) if trades else 0,
         "open_at_end": len(broker.positions),
         "methods": sorted(methods.values(), key=lambda m: m["pnl"], reverse=True),
+        "by_score": by_score(trades, "return_pct"),
         "recent_trades": trades[-15:][::-1],
         "chart": [{"d": d.date().isoformat(), "agent": round(r.agent, 2), "bench": round(r.bench, 2)}
                   for d, r in weekly.iterrows()],
@@ -301,7 +321,8 @@ def method_results(strategy: Strategy, cfg: dict) -> dict:
                 df = data.load(sym, market, cfg["history_years"])
             except Exception:
                 continue
-            m, _ = backtest.run(df, positions(strategy, df, mcfg["allow_short"]), mcfg["fee_bps"], mcfg["slippage_bps"])
+            m, _ = backtest.run(df, positions(strategy, df, mcfg["allow_short"]), mcfg["fee_bps"], mcfg["slippage_bps"],
+                                mcfg.get("carry_pct_year", 0))
             rets.append(m.total_return)
             holds.append(m.buy_hold_return)
             sharpes.append(m.sharpe)

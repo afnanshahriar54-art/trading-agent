@@ -721,6 +721,7 @@ function ideaCard(i) {
         <div><h4 class="up">Reasons for</h4><ul>${i.pros.map(x => `<li>${esc(x)}</li>`).join("") || "<li>None</li>"}</ul></div>
         <div><h4 class="down">Reasons against</h4><ul>${i.cons.map(x => `<li>${esc(x)}</li>`).join("") || "<li>None</li>"}</ul></div>
       </div>
+      <p class="note" style="margin:8px 0 0">About the score: ${i.score}/100 ranks this idea against others (past results, how many methods agree, market conditions). It is not a ${i.score}% chance of winning. Results → Track record shows how ideas at each score really did.</p>
       <div class="method"><b>How the ${esc(i.method)} method works:</b> ${esc(i.rule)}
         Over ${r.years} years on ${esc(i.name)}: ${pct0(r.return)} total, ${Math.round(r.win_rate * 100)}% of ${r.trades} trades won, worst drop ${pct0(r.worst_drop)}.
         Simply buying and holding: ${pct0(r.hold_return)}.</div>
@@ -1315,7 +1316,12 @@ function trackHtml(t) {
   const word = {target: "Reached take-profit", stop: "Safety net", time: "Month over", running: "Still running", waiting: "Waiting for prices"};
   return head + (all.finished ? `<div class="table-wrap"><table><tr><th></th><th>Finished</th><th>Made money</th><th>Average per idea</th><th>Simply buying</th></tr>
       ${line("All ideas", all)}${line("Strong ideas only (above your minimum score)", t.strong)}
-      ${Object.entries(t.markets).map(([m, x]) => line(m, x)).join("")}</table></div>` : "") + `
+      ${Object.entries(t.markets).map(([m, x]) => line(m, x)).join("")}</table></div>` : "") +
+    (t.by_score && t.by_score.length ? `<h4 style="margin:12px 0 4px">By confidence score</h4>
+      <p class="note" style="margin:0 0 6px">The score ranks ideas; it is not a chance of winning. If higher scores don't do better here over time, don't lean on the score.</p>
+      <div class="table-wrap"><table><tr><th>Score</th><th>Finished</th><th>Made money</th><th>Average per idea</th></tr>
+      ${t.by_score.map(x => `<tr><td>${esc(x.group)}</td><td>${x.count}</td><td>${Math.round(x.win_rate * 100)}%</td><td class="${cls(x.avg)}">${pct(x.avg * 100)}</td></tr>`).join("")}
+      </table></div>` : "") + `
     <details style="margin-top:8px"><summary>Latest ideas (${t.count} recorded, ${t.running} still running)</summary>
       <div class="table-wrap"><table><tr><th>Date</th><th>Asset</th><th>Idea</th><th>What happened</th><th>Result</th></tr>
       ${t.ideas.map(i => `<tr><td>${esc(i.date)}</td><td>${esc(i.name)}<br><span class="note">${esc(i.market_name)}</span></td>
@@ -1347,12 +1353,17 @@ function renderReport(r) {
         Held about ${Math.round(m.avg_days)} days each. On average only ${Math.round(m.avg_invested * 100)}% of the money was invested at a time; the rest sat in cash, because each trade risks just 1%.</p>
       ${lineChart([{name: "The agent", color: "#2f6fed", points: m.chart.map(x => ({d: x.d, v: x.agent}))},
                    {name: m.bench_name, color: "#98a2b3", points: m.chart.map(x => ({d: x.d, v: x.bench}))}], v => money(v, c))}
+      ${m.by_score && m.by_score.length ? `<details><summary>Did higher confidence scores do better?</summary>
+        <p class="note">The confidence score ranks ideas; it is not a chance of winning. This shows how trades at each score really did.</p>
+        <table><tr><th>Score</th><th>Trades</th><th>Made money</th><th>Average per trade</th></tr>
+        ${m.by_score.map(x => `<tr><td>${esc(x.group)}</td><td>${x.count}</td><td>${Math.round(x.win_rate * 100)}%</td><td class="${cls(x.avg)}">${pct(x.avg)}</td></tr>`).join("")}
+        </table></details>` : ""}
       <details><summary>Which methods made or lost money</summary>
         <table><tr><th>Method</th><th>Trades</th><th>Winners</th><th>Profit / loss</th></tr>
         ${m.methods.map(x => `<tr><td>${esc(x.method)}</td><td>${x.trades}</td><td>${Math.round(x.wins / x.trades * 100)}%</td><td class="${cls(x.pnl)}">${money(x.pnl, c)}</td></tr>`).join("")}
         </table></details>
     </div>`;
-  }).join("") + `<p class="note" style="margin-top:12px">How this was tested: each day used only earlier prices. Trades filled at the closing price plus fees and slippage. Safety nets were checked on closing prices, and the daily loss limit was not applied. Past results don't guarantee future ones.</p>`;
+  }).join("") + `<p class="note" style="margin-top:12px">How this was tested: each day used only earlier prices. Trades opened at the closing price plus fees and slippage. Safety nets and take-profits were checked against each day's high and low (a gap past the safety net closed at the worse opening price; if both were touched on one day, the safety net counted first). Forex paid overnight financing. The daily loss limit was not applied. Past results don't guarantee future ones.</p>`;
 }
 
 async function runReport() {

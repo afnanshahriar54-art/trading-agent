@@ -14,6 +14,7 @@ import json
 import numpy as np
 
 from . import data, names, odds
+from .analyzer import by_score
 from .paths import HOME
 from .risk import RiskConfig, RiskManager
 
@@ -98,6 +99,7 @@ def review(cfg: dict) -> dict:
             "all": _totals(done), "strong": _totals([r for r in done if r.get("strong")]),
             "markets": {names.market(m): _totals([r for r in done if r["market"] == m])
                         for m in dict.fromkeys(r["market"] for r in done)},
+            "by_score": by_score(done, "result"),
             "since": rows[0]["date"] if rows else None}
 
 

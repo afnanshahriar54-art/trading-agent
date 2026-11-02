@@ -54,7 +54,8 @@ def main():
         bh, _ = backtest.run(df, df.close * 0 + 1, 0, 0)
         print(f"{'Buy and hold':28s} {bh.short()}")
         for st in available():
-            m, _ = backtest.run(df, positions(st, df, mcfg["allow_short"]), mcfg["fee_bps"], mcfg["slippage_bps"])
+            m, _ = backtest.run(df, positions(st, df, mcfg["allow_short"]), mcfg["fee_bps"], mcfg["slippage_bps"],
+                                mcfg.get("carry_pct_year", 0))
             print(f"{st.name:28s} {m.short()}")
     elif args.cmd == "portfolio":
         files = sorted(STATE_DIR.glob("*.json")) if STATE_DIR.exists() else []

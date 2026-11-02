@@ -4,6 +4,7 @@ The risk manager has the final say; no order reaches a broker without passing it
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .paths import HOME
@@ -21,6 +22,34 @@ class RiskConfig:
     min_score: float = 55
     starting_cash: float = 100_000
     take_profit: dict | None = None  # {"mode": "risk"|"percent"|"amount"|"off", "value": float}
+
+    def __post_init__(self):
+        """Refuse settings that would make the limits meaningless (Settings also checks them on save)."""
+        checks = [("risk_per_trade_pct", 0, 100), ("max_position_pct", 0, 1000), ("max_open_positions", 1, 1000),
+                  ("daily_loss_limit_pct", 0, 100), ("atr_stop_multiple", 0, 100), ("min_score", 0, 100),
+                  ("starting_cash", 0, 1e12)]
+        for name, lo, hi in checks:
+            v = getattr(self, name)
+            if not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi or (v == 0 and lo == 0
+                                                                                              and name != "min_score"):
+                raise ValueError(f"Risk setting {name} = {v!r} is outside the sensible range ({lo} to {hi}).")
+
+
+def order_problem(side: int, qty: float, price: float, stop: float, fx: float = 1.0,
+                  target: float | None = None) -> str | None:
+    """The last check before any order: a broken price feed or a bug must never place a trade.
+    Returns what's wrong, in words, or None if the order makes sense."""
+    nums = {"price": price, "quantity": qty, "safety net": stop, "currency rate": fx}
+    for name, v in nums.items():
+        if not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
+            return f"the {name} ({v!r}) isn't a valid positive number"
+    if side not in (1, -1):
+        return f"unknown direction {side!r}"
+    if side * (price - stop) <= 0:
+        return f"the safety net ({stop:.6g}) is on the wrong side of the price ({price:.6g})"
+    if target is not None and (not math.isfinite(target) or side * (target - price) <= 0):
+        return f"the take-profit ({target!r}) is on the wrong side of the price ({price:.6g})"
+    return None
 
 
 class RiskManager:
@@ -46,6 +75,8 @@ class RiskManager:
         """Quantity so that hitting the stop loses at most risk_per_trade_pct of equity,
         capped by max_position_pct. `fx` converts prices into the account currency
         (forex pairs are priced in their quote currency, e.g. yen for USDJPY)."""
+        if not all(math.isfinite(v) for v in (equity, entry, stop, fx)) or equity <= 0 or fx <= 0:
+            return 0.0  # broken numbers: size nothing
         per_unit_risk = abs(entry - stop) * fx
         if per_unit_risk <= 0 or entry <= 0:
             return 0.0
@@ -60,6 +91,8 @@ class RiskManager:
         manual is for trades you pick yourself: they have no confidence score, every other rule applies."""
         if KILL_SWITCH.exists() and not ignore_pause:
             return False, "Trading is paused (the stop switch is on)."
+        if not all(math.isfinite(v) for v in (score, equity, day_start_equity, cash, cost)) or equity <= 0:
+            return False, "The account or price numbers look broken right now, so no trade. Try again shortly."
         if score < self.cfg.min_score and not manual:
             return False, f"Confidence {score:.0f} is below your minimum of {self.cfg.min_score:.0f}."
         if open_positions >= self.cfg.max_open_positions:

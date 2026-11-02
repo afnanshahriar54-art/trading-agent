@@ -26,3 +26,5 @@ installer/
 *.exe
 *.log
 tests/.amounttest/
+tests/.recoverytest/
+tests/.recoverytest/

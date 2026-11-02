@@ -47,7 +47,7 @@ class OandaPractice(LiveBroker):
             out[p["instrument"].replace("_", "") + "=X"] = (qty, float(leg.get("averagePrice", 0)))
         return out
 
-    def _submit(self, symbol, side, qty, stop, target=None):
+    def _submit(self, symbol, side, qty, stop, target=None, cid=None):
         order = {
             "type": "MARKET", "instrument": self.instrument(symbol), "units": str(int(side * qty)),
             "timeInForce": "FOK", "positionFill": "DEFAULT",
@@ -56,11 +56,22 @@ class OandaPractice(LiveBroker):
         }
         if target:
             order["takeProfitOnFill"] = {"price": self._price(symbol, target)}
+        if cid:
+            order["clientExtensions"] = {"id": cid}
         resp = self._req("POST", "/orders", json={"order": order})
         if "orderCancelTransaction" in resp:
             raise BrokerError(f"OANDA cancelled the order: {resp['orderCancelTransaction'].get('reason')}")
         f = resp.get("orderFillTransaction", {})
         return abs(float(f.get("units", qty))), float(f.get("price", 0)), None
+
+    def _order_status(self, cid: str) -> str | None:
+        r = self.http.get(f"{BASE}/v3/accounts/{self.account_id}/orders/@{cid}", timeout=20)
+        if r.status_code == 404:
+            return "gone"
+        if r.status_code >= 400:
+            return None
+        state = r.json().get("order", {}).get("state")
+        return {"FILLED": "filled", "PENDING": "open"}.get(state, "gone")
 
     def _move_stop(self, symbol, stop):
         """Change the stop-loss on the open OANDA trade(s) in this instrument."""
