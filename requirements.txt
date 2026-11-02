@@ -1,0 +1,5 @@
+pandas>=2.0
+numpy>=1.24
+yfinance>=0.2.40
+pyyaml>=6.0
+bdshare>=1.2   # optional: Dhaka Stock Exchange data

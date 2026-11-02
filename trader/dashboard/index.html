@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading Agent</title>
+<script>
+  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e4e7ec;
+    --accent: #2f6fed; --accent-text: #ffffff; --good: #0f8a4b; --good-bg: #e7f6ee;
+    --bad: #c4321c; --bad-bg: #fdecea; --warn: #9a6400; --warn-bg: #fff4dc; --chip: #eef1f6;
+  }
+  /* Dark colours: used when you pick Dark, or Auto while Windows is in dark mode. */
+  :root[data-theme="dark"] {
+    --bg: #0f1218; --card: #181d26; --text: #e7eaf0; --muted: #98a2b3; --line: #2a3140;
+    --accent: #5b8ff9; --good: #4cc38a; --good-bg: #15302a; --bad: #ff7a66; --bad-bg: #3a1f1c;
+    --warn: #f0b44c; --warn-bg: #3a2e14; --chip: #242b37;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]):not([data-theme="dark"]) {
+      --bg: #0f1218; --card: #181d26; --text: #e7eaf0; --muted: #98a2b3; --line: #2a3140;
+      --accent: #5b8ff9; --good: #4cc38a; --good-bg: #15302a; --bad: #ff7a66; --bad-bg: #3a1f1c;
+      --warn: #f0b44c; --warn-bg: #3a2e14; --chip: #242b37;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  .theme { display: flex; gap: 2px; background: var(--chip); border-radius: 8px; padding: 2px; }
+  .theme button { background: none; border: 0; color: var(--muted); padding: 4px 8px; border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; }
+  .theme button.on { background: var(--card); color: var(--text); font-weight: 600; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .bar { max-width: 1100px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--good-bg); color: var(--good); font-weight: 600; }
+  .pill.paused { background: var(--bad-bg); color: var(--bad); }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button { background: none; border: 0; color: var(--muted); padding: 6px 10px; border-radius: 8px; font: inherit; cursor: pointer; }
+  nav button.active { background: var(--chip); color: var(--text); font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .acct .label { color: var(--muted); font-size: 13px; }
+  .acct .value { font-size: 24px; font-weight: 600; margin: 2px 0; }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .btn { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 8px; padding: 9px 16px;
+         font: inherit; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ghost { background: var(--chip); color: var(--text); }
+  .btn.danger { background: var(--bad); }
+  .btn.small { padding: 5px 10px; font-size: 13px; }
+  .progress { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin: 10px 0 4px; }
+  .progress div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .idea { margin-bottom: 14px; }
+  .idea-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .idea-head h3 { margin: 0; font-size: 18px; }
+  .chip { font-size: 12px; background: var(--chip); padding: 2px 8px; border-radius: 6px; color: var(--muted); }
+  .score { margin-left: auto; font-weight: 700; padding: 4px 10px; border-radius: 8px; font-size: 14px; }
+  .score.Strong { background: var(--good-bg); color: var(--good); }
+  .score.Good { background: var(--good-bg); color: var(--good); }
+  .score.Weak { background: var(--warn-bg); color: var(--warn); }
+  .score.Very { background: var(--bad-bg); color: var(--bad); }
+  .plan { background: var(--chip); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+  .plan p { margin: 2px 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+  .cols h4 { margin: 0 0 6px; font-size: 14px; }
+  .cols ul { margin: 0; padding-left: 18px; }
+  .cols li { margin-bottom: 4px; }
+  .blocked { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .method { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  @keyframes flash { from { background: var(--chip); } to { background: transparent; } }
+  .flash { animation: flash .8s ease-out; border-radius: 4px; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+  @media (max-width: 640px) { .tiles { grid-template-columns: 1fr; } }
+  .tile { background: var(--chip); border-radius: 10px; padding: 10px 12px; }
+  .tile .big { font-size: 20px; font-weight: 700; margin: 2px 0; }
+  .meter { display: inline-block; width: 50px; height: 6px; background: var(--line); border-radius: 3px; vertical-align: middle; margin-left: 4px; overflow: hidden; }
+  .meter span { display: block; height: 100%; background: currentColor; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  .table-wrap { overflow-x: auto; }
+  .note { color: var(--muted); font-size: 13px; }
+  .notice { border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+  .notice.info { background: var(--chip); }
+  .notice.ok { background: var(--good-bg); color: var(--good); }
+  .notice.err { background: var(--bad-bg); color: var(--bad); }
+  .suggest { color: var(--warn); font-size: 13px; }
+  details summary { cursor: pointer; color: var(--muted); margin: 8px 0; }
+  .rules li { margin-bottom: 6px; }
+  dl dt { font-weight: 600; margin-top: 10px; } dl dd { margin: 2px 0 0; color: var(--muted); }
+  section { display: none; } section.show { display: block; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); max-width: 90%;
+           padding: 12px 18px; border-radius: 10px; display: none; z-index: 10; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Trading Agent</h1>
+    <span id="mode" class="pill">Practice money only</span>
+    <div class="theme" role="group" aria-label="Colour theme">
+      <button data-theme-pick="light" title="Light">&#9728; Light</button>
+      <button data-theme-pick="dark" title="Dark">&#9790; Dark</button>
+      <button data-theme-pick="auto" title="Follow Windows">Auto</button>
+    </div>
+    <nav>
+      <button data-tab="home" class="active">Home</button>
+      <button data-tab="ideas">Trade ideas</button>
+      <button data-tab="trades">Open trades</button>
+      <button data-tab="charts">Charts</button>
+      <button data-tab="methods">Methods</button>
+      <button data-tab="results">Results</button>
+      <button data-tab="history">History</button>
+      <button data-tab="settings">Settings</button>
+      <button data-tab="help">How it works</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- HOME -->
+  <section id="home" class="show">
+    <h2>Your accounts</h2>
+    <p class="sub">All four accounts use practice money. Values update each time you open this page.</p>
+    <div id="accounts" class="grid"><div class="card">Loading...</div></div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Trading mode</h2>
+      <p id="modeSummary">Loading...</p>
+      <div class="actions">
+        <button class="btn ghost" onclick="showTab('settings')">Change in Settings</button>
+        <button id="pauseBtn" class="btn ghost" onclick="togglePause()">Pause all trading</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>What to do</h2>
+      <ol>
+        <li>Go to <b>Trade ideas</b> and click <b>Find trade ideas</b>. The agent checks every market in about 10 seconds.</li>
+        <li>Read each idea: what it would do, how much you could lose, and why. Approve the ones you agree with.</li>
+        <li>Or open <b>Charts</b>, watch the live price, and place your own practice trade.</li>
+        <li>Check <b>Open trades</b> once a day. If the agent suggests closing one, you'll see it there.</li>
+      </ol>
+      <div class="actions"><button class="btn" onclick="showTab('ideas')">Go to trade ideas</button></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="settings">
+    <h2>Settings</h2>
+    <p class="sub">Choose who decides on trades, and the rules every trade must follow.</p>
+    <div class="card" style="margin-bottom:16px;position:sticky;top:64px;z-index:4">
+      <input id="stSearch" type="search" placeholder="Search settings, e.g. stop loss, dark mode, risk, profit, daily check"
+        oninput="stFilter()" autocomplete="off"
+        style="font:inherit;width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
+      <p id="stSearchInfo" class="note" style="margin:6px 0 0"></p>
+      <div id="stElsewhere"></div>
+    </div>
+
+    <div class="card stCard" data-n="1">
+      <h2>1. Trading mode</h2>
+      <div class="cols" style="margin-top:10px">
+        <label class="card" style="cursor:pointer"><input type="radio" name="mode" value="manual" onchange="stRender()">
+          <b>Manual mode</b> (recommended)
+          <p class="note" style="margin:6px 0 0">Nothing is traded without you. The agent finds and explains ideas; you approve the ones you want, or place your own from Charts. The daily check only sends notifications.</p></label>
+        <label class="card" style="cursor:pointer"><input type="radio" name="mode" value="auto" onchange="stRender()">
+          <b>Auto mode</b>
+          <p class="note" style="margin:6px 0 0">You set the rules below. At the daily check, the app places and closes practice trades by itself in the markets you choose, using only the methods you allow. You can still trade by hand too.</p></label>
+      </div>
+    </div>
+
+    <div class="card stCard" data-n="2" style="margin-top:16px">
+      <h2>2. Daily check</h2>
+      <p class="note">Once a day, even when this window is closed, the agent checks every market. If your computer is off at that time, it checks as soon as it's back on.</p>
+      <div style="display:grid;gap:10px;margin-top:10px">
+        <label><input type="checkbox" id="dcOn"> Turn on the daily check</label>
+        <label>Check every day at <input type="time" id="dcTime" value="08:00" style="font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"></label>
+      </div>
+      <p class="note">Suggested time: 08:00 Bangladesh time. By then the US, crypto and forex trading days have finished, so signals are final. US orders placed then fill when the US market opens at 7:30 PM.</p>
+      <div class="actions"><button id="dcRun" class="btn ghost" onclick="runDaily()">Run a check now</button></div>
+      <p id="dcStatus" class="note"></p>
+    </div>
+
+    <div class="card stCard" data-n="3" style="margin-top:16px" id="autoCard">
+      <h2>3. Auto-mode rules</h2>
+      <p class="note">Only used in Auto mode. The report-card result is shown for each choice, so you can see what worked over the past years.</p>
+      <h4 style="margin:12px 0 6px">Markets the app may trade by itself</h4>
+      <div id="stMarkets" style="display:grid;gap:6px"></div>
+      <h4 style="margin:16px 0 6px">Methods it may use</h4>
+      <div id="stMethods" style="display:grid;gap:6px"></div>
+    </div>
+
+    <div class="card stCard" data-n="4" style="margin-top:16px">
+      <h2>4. Safety rules (both modes)</h2>
+      <p class="note">Every trade must pass these, whether you or the app places it.</p>
+      <div id="stRules" style="display:grid;gap:10px;margin-top:10px"></div>
+    </div>
+
+    <div class="card stCard" data-n="5" style="margin-top:16px">
+      <h2>5. Take profit</h2>
+      <p class="note">Close a winning trade automatically as soon as it reaches this gain. At Alpaca (US stocks) the target sits at the broker and closes instantly, even when this app is closed. On the practice accounts on this PC, it's checked every 30 seconds while the app is open, and at the daily check. Applies to new trades.</p>
+      <div style="display:grid;gap:8px;margin-top:10px">
+        <label><input type="radio" name="tpMode" value="risk" onchange="tpModeChanged()"> At <b>a multiple of what the trade risked</b> (e.g. 2 = if it could lose $500, close it at +$1,000)</label>
+        <label><input type="radio" name="tpMode" value="percent" onchange="tpModeChanged()"> At <b>a % gain</b> on the trade</label>
+        <label><input type="radio" name="tpMode" value="amount" onchange="tpModeChanged()"> At <b>a money amount</b> of profit per trade</label>
+        <label><input type="radio" name="tpMode" value="off" onchange="tpModeChanged()"> <b>Off</b>: let winners run until the method or safety net closes them</label>
+        <label id="tpValueRow">Target <input type="number" id="tpValue" step="any" min="0"
+          style="font:inherit;width:100px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"> <span id="tpUnit"></span></label>
+      </div>
+      <p class="note">Trade-off, from the report card: a take-profit wins more often and has smaller drops, but makes less money overall, because it cuts off the big winners. Over the past ~4 years at 2× risk: US stocks +30% instead of +38%, crypto +12% instead of +23%.</p>
+    </div>
+
+    <div class="card stCard" data-n="6" style="margin-top:16px">
+      <h2>6. Protect profits (lower risk)</h2>
+      <p class="note">Moves a trade's safety net in your favour as it gains, so a winning trade can't turn into a big loss. A safety net only ever moves up (down for short trades), never back. "R" = what the trade risked when it opened. Works on all accounts: at Alpaca the safety-net order itself is moved.</p>
+      <div style="display:grid;gap:10px;margin-top:10px">
+        <label><input type="checkbox" id="prTrail"> <b>Trailing safety net</b> (recommended): follow the best price so far, staying
+          <input type="number" id="prTrailDist" step="0.25" min="0.25" max="5" style="font:inherit;width:70px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"> × R behind it</label>
+        <label><input type="checkbox" id="prBe"> <b>Break-even</b>: once a trade is up
+          <input type="number" id="prBeAt" step="0.25" min="0.25" max="5" style="font:inherit;width:70px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"> × R, move its safety net to the buy price</label>
+      </div>
+      <p class="note">Report card, past ~4 years: <b>trailing at 1.5× R</b> did best. Crypto made +34% instead of +23% with a smaller worst drop (−15% instead of −19%); US stocks were about the same profit (+39%) with a slightly smaller worst drop. Break-even alone helped a little. The fixed take-profit above lowered profits.</p>
+    </div>
+
+    <div class="actions" style="margin-top:16px">
+      <button class="btn" onclick="stSave()">Save settings</button>
+      <span id="stMsg" class="note"></span>
+    </div>
+  </section>
+
+  <!-- IDEAS -->
+  <section id="ideas">
+    <h2>Trade ideas</h2>
+    <p class="sub">The agent checks 25 assets with the methods you've switched on, and ranks what it finds. Nothing is traded until you approve it.</p>
+    <div class="notice info" id="ideasMethods">Loading...</div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="actions" style="margin-top:0">
+        <button id="scanBtn" class="btn" onclick="startScan()">Find trade ideas</button>
+        <span id="scanText" class="note"></span>
+      </div>
+      <div id="scanBar" class="progress" style="display:none"><div></div></div>
+    </div>
+    <div id="ideaList"></div>
+  </section>
+
+  <!-- OPEN TRADES -->
+  <section id="trades">
+    <h2>Open trades</h2>
+    <p class="sub">Everything you hold right now. Profit and loss update every second while this page is open.</p>
+    <div class="card" style="margin-bottom:16px;position:sticky;top:64px;z-index:4">
+      <div class="idea-head">
+        <div><div class="note">All open trades right now</div>
+          <div id="liveTotal" style="font-size:26px;font-weight:700">-</div></div>
+        <span id="liveTime" class="note" style="margin-left:auto"></span>
+      </div>
+      <div class="actions">
+        <button class="btn small ghost" onclick="closeMany('winners')">Close all winning trades</button>
+        <button class="btn small ghost" onclick="closeMany('losers')">Close all losing trades</button>
+        <button class="btn small danger" onclick="closeMany('all')">Close all trades</button>
+      </div>
+    </div>
+    <div id="tradeList" class="card">Loading...</div>
+  </section>
+
+  <!-- CHARTS -->
+  <section id="charts">
+    <h2>Charts</h2>
+    <p class="sub">Price of any asset the agent watches. Drag to scroll, use the mouse wheel to zoom, hover to see exact prices. Green candles closed higher than they opened, red ones lower.</p>
+    <div class="card">
+      <div class="actions" style="margin-top:0">
+        <select id="chartSymbol" onchange="loadChart()" style="font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text);max-width:100%"></select>
+        <div id="rangeBtns" style="display:flex;gap:4px">
+          <button class="btn small ghost" data-range="minute">1 min</button>
+          <button class="btn small ghost" data-range="day">Day</button>
+          <button class="btn small ghost" data-range="week">Week</button>
+          <button class="btn small" data-range="month">Month</button>
+          <button class="btn small ghost" data-range="year">Year</button>
+        </div>
+        <div id="kindBtns" style="display:flex;gap:4px;margin-left:auto">
+          <button class="btn small" data-kind="candles" onclick="setChartKind('candles')">Candles</button>
+          <button class="btn small ghost" data-kind="line" onclick="setChartKind('line')">Line</button>
+        </div>
+      </div>
+      <div id="chartHead" style="margin-top:12px"></div>
+      <div id="chartBox" style="position:relative"></div>
+      <p class="note" id="chartNote"></p>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Trade <span id="tpName"></span></h2>
+      <p class="note">Practice money. Your own trades follow the same safety rules as the agent's, and only their safety net closes them. You can also close them yourself under Open trades.</p>
+      <div class="actions" style="margin-top:8px">
+        <div style="display:flex;gap:4px">
+          <button id="tpBuy" class="btn small" onclick="tpSide(1)">Buy</button>
+          <button id="tpSell" class="btn small ghost" onclick="tpSide(-1)">Sell short</button>
+        </div>
+        <label>Amount <span id="tpCur">($)</span> <input id="tpAmount" type="number" min="0" step="any" placeholder="suggested" oninput="tpQuoteSoon()"
+               style="font:inherit;width:130px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)"></label>
+        <button class="btn small ghost" onclick="document.getElementById('tpAmount').value=''; tpQuote()">Use suggested size</button>
+      </div>
+      <div id="tpPreview" class="plan">Loading...</div>
+      <div class="actions"><button id="tpPlace" class="btn" onclick="tpPlace()" disabled>Place practice trade</button></div>
+    </div>
+  </section>
+
+  <!-- METHODS -->
+  <section id="methods">
+    <h2>Methods</h2>
+    <p class="sub">A "method" is a fixed rule for when to buy and sell, for example "buy when the price breaks above its 20-day high". The agent uses the methods that are <b>switched on</b> here to find your trade ideas. Switched-off methods are ignored.</p>
+    <div class="card" style="margin-bottom:16px">
+      <p style="margin-top:0" id="mSummary">Loading...</p>
+      <p class="note">Quick choice: replaces which methods are on. You can still switch single ones on or off below.</p>
+      <div class="actions">
+        <button class="btn" onclick="presetMethods('best')">Best tested</button>
+        <button class="btn ghost" onclick="presetMethods('original')">Original 7</button>
+        <button class="btn ghost" onclick="presetMethods('all')">All</button>
+      </div>
+      <p class="note"><b>Best tested</b> = methods marked &#10003; below: they gave a steady reward for their risk in <i>both</i> US stocks and crypto when tested. <b>All</b> gives the most ideas, including weaker ones.</p>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="actions" style="margin-top:0">
+        <button id="mcBtn" class="btn" onclick="runMethodCard()">Test all methods</button>
+        <span id="mcText" class="note"></span>
+      </div>
+      <p class="note">Each method is traded on its own on every asset over the past ~6 years (about 2 for Dhaka), after fees, and compared with simply buying and holding. Most methods trail buy-and-hold in rising markets; what they offer is spending less time in the market and smaller drops. Past results don't guarantee future ones.</p>
+    </div>
+    <div id="methodList"></div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>Build your own method</h2>
+      <p class="note">Your method buys when <b>all</b> of the "buy when" conditions are true, and sells when <b>any</b> "sell when" condition is true. With no sell conditions, it sells as soon as the buy conditions stop being true. Your methods only buy; they never sell short. They start switched off: test first, then switch on.</p>
+      <div class="actions">
+        <label>Name <input id="bName" maxlength="40" placeholder="e.g. Cheap in an uptrend"
+          style="font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)"></label>
+        <label>Kind <select id="bFamily" style="font:inherit;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)"></select></label>
+      </div>
+      <h4 style="margin:14px 0 6px">Buy when (all true)</h4>
+      <div id="bEntry"></div>
+      <button class="btn small ghost" onclick="bAdd('entry')">+ Add condition</button>
+      <h4 style="margin:14px 0 6px">Sell when (any true)</h4>
+      <div id="bExit"></div>
+      <button class="btn small ghost" onclick="bAdd('exit')">+ Add condition</button>
+      <div class="actions">
+        <button class="btn ghost" onclick="bTest()">Test it</button>
+        <button class="btn" onclick="bSave()">Save method</button>
+      </div>
+      <div id="bResult"></div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results">
+    <h2>Results</h2>
+    <p class="sub">Is the agent actually any good? Two honest answers: how your practice trades are doing, and how the agent's rules would have done over the past years.</p>
+
+    <div class="card" style="margin-bottom:16px">
+      <h2>Your practice trades</h2>
+      <div id="practice">Loading...</div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h2>Track record of trade ideas</h2>
+      <p class="note">Every idea the app suggests is written down, then checked against what the price really did over the next month, whether you took it or not. Each idea is followed with its safety net (and trailing, if on). A dollar take-profit depends on the trade size, so it isn't included here.</p>
+      <div id="track">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h2>Report card: the agent's rules over the past years</h2>
+      <p class="note">Replays the agent day by day using only the prices it would have known on each day: same methods, same confidence score, same safety rules, starting with 100,000 in each account. It then compares the result with simply buying and holding.</p>
+      <div class="actions" style="margin-top:8px">
+        <button id="reportBtn" class="btn" onclick="runReport()">Run report card</button>
+        <span id="reportText" class="note"></span>
+      </div>
+      <div id="report"></div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history">
+    <h2>History</h2>
+    <p class="sub">Every order the agent has sent, newest first.</p>
+    <div class="card" style="margin-bottom:16px">
+      <input id="hSearch" type="search" placeholder="Search history, e.g. Bitcoin, closed, safety net, take-profit, 2026-10-29"
+        oninput="renderHistory()" autocomplete="off"
+        style="font:inherit;width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
+      <p id="hSearchInfo" class="note" style="margin:6px 0 0"></p>
+    </div>
+    <div id="historyList" class="card">Loading...</div>
+  </section>
+
+  <!-- HELP -->
+  <section id="help">
+    <h2>How it works</h2>
+    <p class="sub">The short version, in plain words.</p>
+    <div class="cols">
+      <div class="card">
+        <h4>Your safety rules</h4>
+        <ul id="rules" class="rules"></ul>
+        <p class="note">These are in <code>config.yaml</code>. Your account keys go in <code>.env</code>.
+          Both are in the settings folder; open them with Notepad.</p>
+        <button class="btn ghost small" onclick="api('/api/open-folder', {}).catch(e => toast(e.message, false))">Open settings folder</button>
+      </div>
+      <div class="card">
+        <h4>Words you'll see</h4>
+        <dl>
+          <dt>Practice account</dt><dd>Fake money at a real broker (or on this computer). Real prices, no real risk.</dd>
+          <dt>Confidence (0-100)</dt><dd>How good the idea looks, combining the method's track record, how it did lately, whether other methods agree, and whether today's market suits it. The agent only trades ideas at or above your minimum.</dd>
+          <dt>Safety net (stop-loss)</dt><dd>A price at which the trade is closed automatically to limit the loss.</dd>
+          <dt>Sell short</dt><dd>Betting a price will fall. You profit if it goes down and lose if it goes up.</dd>
+          <dt>Method</dt><dd>A fixed rule for when to buy and sell, e.g. "buy when the 12-day average price rises above the 26-day average".</dd>
+          <dt>Track record</dt><dd>How the method would have done on this asset over the past years, after fees. Past results don't guarantee future ones.</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script src="/vendor/lightweight-charts.js"></script>
+<script>
+// ---- theme ----
+function setTheme(t) {
+  if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("theme", t); } catch (e) {}
+  document.querySelectorAll("[data-theme-pick]").forEach(b => b.classList.toggle("on", b.dataset.themePick === t));
+  if (typeof chartThemeChanged === "function") chartThemeChanged();
+}
+document.querySelectorAll("[data-theme-pick]").forEach(b => b.onclick = () => setTheme(b.dataset.themePick));
+setTheme((() => { try { return localStorage.getItem("theme") || "auto"; } catch (e) { return "auto"; } })());
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => typeof chartThemeChanged === "function" && chartThemeChanged());
+
+const H = {"Content-Type": "application/json", "X-Trading-Agent": "1"};
+let overview = null, skipped = new Set(), polling = null;
+
+const money = (v, cur = "USD") => {
+  if (v == null || isNaN(v)) return "-";
+  const s = Math.abs(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  return (v < 0 ? "-" : "") + (cur === "BDT" ? "৳" : "$") + s;
+};
+const price = (v) => v == null ? "-" : v < 10 ? v.toFixed(4) : v.toLocaleString(undefined, {maximumFractionDigits: 2});
+const pct = (v) => (v > 0 ? "+" : "") + v.toFixed(1) + "%";
+const pct0 = (v) => (v > 0 ? "+" : "") + Math.round(v * 100) + "%";
+const qty = (v) => v.toLocaleString(undefined, {maximumFractionDigits: 4});
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+
+function toast(msg, ok = true) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.className = "notice " + (ok ? "ok" : "err"); t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 6000);
+}
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: H, body: JSON.stringify(body)} : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || "Request failed");
+  return j;
+}
+
+function showTab(name) {
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("show", s.id === name));
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  if (name === "home" || name === "trades") loadOverview();
+  if (name === "trades") { liveKeys = ""; liveTick(); }
+  if (name === "home" || name === "settings") loadSettings();
+  if (name === "charts") initCharts();
+  if (name === "methods") loadMethods();
+  if (name === "history") loadHistory();
+  if (name === "results") loadResults();
+  if (name === "ideas") { loadIdeas(); loadIdeasMethods(); }
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
+// ---- accounts & open trades ----
+async function loadOverview() {
+  try { overview = await api("/api/overview"); } catch (e) { return toast(e.message, false); }
+  const paused = overview.paused;
+  document.getElementById("mode").textContent = paused ? "Trading paused" : "Practice money only";
+  document.getElementById("mode").className = "pill" + (paused ? " paused" : "");
+  const pb = document.getElementById("pauseBtn");
+  pb.textContent = paused ? "Resume trading" : "Pause all trading";
+  pb.className = "btn " + (paused ? "danger" : "ghost");
+
+  document.getElementById("accounts").innerHTML = overview.accounts.map(a => a.ok ? `
+    <div class="card acct">
+      <div class="label">${esc(a.name)}</div>
+      <div class="value">${money(a.equity, a.currency)}</div>
+      <div class="${cls(a.today)}">${a.today === 0 ? "No change today" : money(a.today, a.currency) + " (" + pct(a.today_pct) + ") today"}</div>
+      <div class="note">Cash ${money(a.cash, a.currency)} · ${a.positions.length} open trade${a.positions.length === 1 ? "" : "s"}${a.pending.length ? " · " + a.pending.length + " waiting" : ""}</div>
+      <div class="note">${esc(a.broker)}</div>
+    </div>` : `
+    <div class="card acct"><div class="label">${esc(a.name)}</div>
+      <div class="notice err" style="margin:8px 0 0">Can't reach this account: ${esc(a.error)}</div>
+      <div class="note">${esc(a.broker)}</div></div>`).join("");
+
+  const rows = overview.accounts.filter(a => a.ok).flatMap(a => a.positions.map(p => ({...p, market: a.market, mname: a.name, cur: a.currency})));
+  const pending = overview.accounts.filter(a => a.ok).flatMap(a => a.pending.map(s => `${s} (${a.name})`));
+  // One card per trade: how it's doing now, and what happens at its safety net and take-profit.
+  const atPrice = (p, px) => (px - p.entry) * p.qty * p.fx * p.dir;  // money result if closed at price px
+  document.getElementById("tradeList").innerHTML = (rows.length ? rows.map(p => {
+    const net = p.stop ? atPrice(p, p.stop) : null, tp = p.target ? atPrice(p, p.target) : null;
+    const moved = p.stop && p.stop0 && Math.abs(p.stop - p.stop0) > 1e-9;
+    return `<div class="card idea" style="background:var(--bg)">
+      <div class="idea-head"><h3>${esc(p.name)}</h3><span class="chip">${esc(p.mname)}</span>
+        <span class="chip">${p.managed ? esc(p.method === "Your trade" ? "Your own trade" : p.method + " method") : "opened by you at the broker"}</span>
+        <span style="margin-left:auto;font-size:22px;font-weight:700" class="lv-pnl ${cls(p.pnl)}" data-key="${esc(p.market + ":" + p.symbol)}">${p.pnl >= 0 ? "+" : ""}${money(p.pnl, p.cur)}</span>
+        <span class="lv-pct ${cls(p.pnl)}" data-key="${esc(p.market + ":" + p.symbol)}">${pct(p.pnl_pct)}</span></div>
+      <p class="note" style="margin:6px 0 0">${p.side} ${qty(p.qty)} ${p.units} at ${price(p.entry)} · now <span class="lv-price" data-key="${esc(p.market + ":" + p.symbol)}">${price(p.price)}</span>
+        · ${p.dir > 0 ? "profits if the price rises" : "profits if the price falls"}</p>
+      <div class="tiles">
+        <div class="tile"><div class="note">Right now</div>
+          <div class="big lv-now ${cls(p.pnl)}" data-key="${esc(p.market + ":" + p.symbol)}">${p.pnl >= 0 ? "Up" : "Down"} ${money(Math.abs(p.pnl), p.cur)}</div></div>
+        <div class="tile"><div class="note">Worst case (safety net${p.stop ? " " + price(p.stop) : ""})</div>
+          <div class="big ${net == null ? "" : cls(net)}">${net == null ? "-" : (net >= 0 ? "+" : "-") + money(Math.abs(net), p.cur)}</div>
+          <div class="note">${net != null && net >= 0 ? "profit locked in" : moved ? "safety net already moved up" : "if the price turns against you"}</div></div>
+        <div class="tile"><div class="note">Take profit${p.target ? " " + price(p.target) : ""}</div>
+          <div class="big up">${tp == null ? "Off" : "+" + money(tp, p.cur)}</div>
+          <div class="note">${tp == null ? "no fixed target" : "closes automatically there"}</div></div>
+      </div>
+      ${p.suggest_close ? `<div class="blocked">The agent suggests closing: ${esc(p.suggest_close)}</div>` : ""}
+      <div class="actions">
+        <button class="btn small ghost" onclick='openChart(${JSON.stringify(p.market)}, ${JSON.stringify(p.symbol)})'>Chart</button>
+        <button class="btn small ${p.suggest_close ? "" : "ghost"}" onclick='closeTrade(${JSON.stringify(p.market)}, ${JSON.stringify(p.symbol)}, ${JSON.stringify(p.name)}, 100)'>Close all of it</button>
+        <select class="btn small ghost" onchange='if (this.value) closeTrade(${JSON.stringify(p.market)}, ${JSON.stringify(p.symbol)}, ${JSON.stringify(p.name)}, +this.value); this.value = ""'>
+          <option value="">Close part...</option><option value="25">Close 25%</option><option value="50">Close half</option><option value="75">Close 75%</option></select>
+        ${p.managed ? `<button class="btn small ghost" onclick="this.closest('.idea').querySelector('.editExits').hidden ^= 1">Change safety net / take-profit</button>` : ""}
+      </div>
+      <div class="editExits plan" hidden>
+        <label>Safety net <input type="number" step="any" class="exStop" value="${p.stop ?? ""}" style="font:inherit;width:120px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"></label>
+        <label style="margin-left:12px">Take-profit <input type="number" step="any" class="exTarget" value="${p.target ?? ""}" placeholder="off" style="font:inherit;width:120px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"></label>
+        <button class="btn small" style="margin-left:12px" onclick='saveExits(this, ${JSON.stringify(p.market)}, ${JSON.stringify(p.symbol)})'>Save</button>
+        <p class="note" style="margin:6px 0 0">You can move the safety net closer to the price (less risk), but not further away than where it started. Leave take-profit empty to switch it off for this trade.</p>
+      </div></div>`;
+  }).join("") : `<p>No open trades. Approve an idea under <b>Trade ideas</b>, or trade from <b>Charts</b>.</p>`) +
+    (pending.length ? `<p class="note">Waiting for the market to open: ${esc(pending.join(", "))}</p>` : "");
+
+  const r = overview.rules;
+  document.getElementById("rules").innerHTML = `
+    <li>Each trade can lose at most <b>${r.risk_per_trade_pct}%</b> of the account before its safety net closes it.</li>
+    <li>No single trade is bigger than <b>${r.max_position_pct}%</b> of the account.</li>
+    <li>At most <b>${r.max_open_positions}</b> open trades per account.</li>
+    <li>If an account falls <b>${r.daily_loss_limit_pct}%</b> in a day, no new trades that day.</li>
+    <li>Only ideas with confidence <b>${r.min_score}</b> or more can be traded.</li>
+    <li>Real-money trading is <b>off</b>. Every account is a practice account.</li>`;
+}
+
+async function closeTrade(market, symbol, name, percent) {
+  const what = percent >= 100 ? `Close your whole ${name} trade` : `Close ${percent}% of your ${name} trade`;
+  if (!confirm(`${what} now at the current price?`)) return;
+  try { toast((await api("/api/close", {market, symbol, percent})).message); } catch (e) { toast(e.message, false); }
+  loadOverview();
+}
+async function closeMany(which) {
+  const what = {all: "Close ALL open trades", winners: "Close every trade that is in profit", losers: "Close every trade that is losing"}[which];
+  if (!confirm(`${what} now at the current prices?`)) return;
+  try { toast((await api("/api/close-many", {which})).message); } catch (e) { toast(e.message, false); }
+  loadOverview();
+}
+async function saveExits(btn, market, symbol) {
+  const box = btn.closest(".editExits");
+  const stop = parseFloat(box.querySelector(".exStop").value), target = parseFloat(box.querySelector(".exTarget").value);
+  try { toast((await api("/api/set-exits", {market, symbol, stop, target: isNaN(target) ? null : target})).message); }
+  catch (e) { return toast(e.message, false); }
+  loadOverview();
+}
+
+// ---- live profit/loss, every second while Open trades is visible ----
+let liveTimer2 = null, liveKeys = "";
+async function liveTick() {
+  clearTimeout(liveTimer2);
+  if (!document.getElementById("trades").classList.contains("show")) return;
+  let d;
+  try { d = await api("/api/live"); } catch (e) { liveTimer2 = setTimeout(liveTick, 3000); return; }
+  const keys = d.trades.map(t => t.key).sort().join(",");
+  if (liveKeys && keys !== liveKeys) { liveKeys = keys; await loadOverview(); }  // a trade opened or closed
+  liveKeys = keys;
+  const tot = document.getElementById("liveTotal");
+  tot.textContent = d.trades.length ? `${d.total_usd >= 0 ? "+" : ""}${money(d.total_usd)}` + (d.total_bdt ? `  ·  ${d.total_bdt >= 0 ? "+" : ""}${money(d.total_bdt, "BDT")}` : "") : "No open trades";
+  tot.className = cls(d.total_usd);
+  document.getElementById("liveTime").textContent = `updated ${d.time}`;
+  d.trades.forEach(t => {
+    const set = (sel, text, colour) => document.querySelectorAll(`${sel}[data-key="${CSS.escape(t.key)}"]`).forEach(el => {
+      if (el.textContent !== text) { el.textContent = text; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      if (colour) { el.classList.toggle("up", t.pnl > 0); el.classList.toggle("down", t.pnl < 0); }
+    });
+    set(".lv-pnl", `${t.pnl >= 0 ? "+" : ""}${money(t.pnl, t.currency)}`, true);
+    set(".lv-pct", pct(t.pnl_pct), true);
+    set(".lv-price", price(t.price));
+    set(".lv-now", `${t.pnl >= 0 ? "Up" : "Down"} ${money(Math.abs(t.pnl), t.currency)}`, true);
+  });
+  liveTimer2 = setTimeout(liveTick, 1000);
+}
+async function togglePause() {
+  try { await api("/api/pause", {on: !overview.paused}); } catch (e) { return toast(e.message, false); }
+  await loadOverview();
+  toast(overview.paused ? "All new trades are paused." : "Trading resumed.");
+}
+
+// ---- ideas ----
+async function startScan() {
+  try { await api("/api/scan", {}); } catch (e) { return toast(e.message, false); }
+  skipped.clear();
+  pollIdeas();
+}
+function pollIdeas() {
+  clearTimeout(polling);
+  polling = setTimeout(async () => { if (await loadIdeas()) pollIdeas(); }, 800);
+}
+async function loadIdeas() {
+  let d;
+  try { d = await api("/api/ideas"); } catch (e) { toast(e.message, false); return false; }
+  const s = d.status, bar = document.getElementById("scanBar"), btn = document.getElementById("scanBtn");
+  btn.disabled = s.running;
+  bar.style.display = s.running ? "block" : "none";
+  bar.firstElementChild.style.width = s.total ? (100 * s.done / s.total) + "%" : "3%";
+  document.getElementById("scanText").textContent = s.running
+    ? `Checking ${s.current}... (${s.done} of ${s.total || "?"})`
+    : s.error ? "Something went wrong: " + s.error
+    : s.finished_at ? "Last checked " + s.finished_at : "Not checked yet today.";
+  if (s.running) return true;
+  renderIdeas(d);
+  return false;
+}
+function renderIdeas(d) {
+  ideasProtect = d.protect || {};
+  const list = document.getElementById("ideaList");
+  if (!d.status.finished_at) { list.innerHTML = ""; return; }
+  const ideas = d.ideas.filter(i => !skipped.has(i.id));
+  const good = ideas.filter(i => i.proposal.ok), rest = ideas.filter(i => !i.proposal.ok);
+  let html = "";
+  if (!d.ideas.length) {
+    html = `<div class="notice info">No new signals right now. That's normal: methods only signal when something changes. Doing nothing is a valid decision. Check again tomorrow.</div>`;
+  } else {
+    html += good.length
+      ? `<div class="notice ok">${good.length} idea${good.length > 1 ? "s" : ""} pass${good.length > 1 ? "" : "es"} your safety rules.</div>`
+      : `<div class="notice info">No idea is strong enough to trade today (your minimum confidence is ${d.min_score}). The weaker ones are listed below so you can see what the agent saw.</div>`;
+    if (d.compare) html += `<p class="note"><b>Why the top idea ranks first:</b> ${esc(d.compare)}</p>`;
+    html += good.map(ideaCard).join("");
+    if (rest.length) html += `<details ${good.length ? "" : "open"}><summary>${rest.length} idea${rest.length > 1 ? "s" : ""} the agent won't take</summary>${rest.map(ideaCard).join("")}</details>`;
+  }
+  list.innerHTML = html;
+}
+// Three plain numbers for any trade: what you put in, what you could win, what you could lose.
+function outcome(o) {
+  const cur = o.cur, trailing = o.protect?.trailing?.on;
+  const win = o.gain != null ? `<span class="up">+${money(o.gain, cur)}</span>`
+                             : `<span class="up">No fixed limit</span>`;
+  const winNote = o.gain != null ? `if it reaches ${price(o.target)}`
+                : trailing ? "your safety net follows the price up to lock in gains" : "it runs until the method or you close it";
+  const total = (o.gain || o.risk * 2) + o.risk;
+  const bar = `<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-top:10px" title="Could lose vs could win">
+      <div style="width:${(o.risk / total * 100).toFixed(1)}%;background:var(--bad)"></div>
+      <div style="flex:1;background:var(--good)${o.gain == null ? ";opacity:.45" : ""}"></div></div>`;
+  return `<div class="tiles">
+      <div class="tile"><div class="note">You put in</div><div class="big">${money(o.size, cur)}</div>
+        <div class="note">${qty(o.qty)} ${o.units} at ${price(o.price)}</div></div>
+      <div class="tile"><div class="note">If it goes well</div><div class="big">${win}</div><div class="note">${esc(winNote)}</div></div>
+      <div class="tile"><div class="note">If it goes wrong</div><div class="big down">-${money(o.risk, cur)}</div>
+        <div class="note">closes at ${price(o.stop)} (safety net)</div></div>
+    </div>${bar}${oddsBox(o.odds, cur)}`;
+}
+// The odds check: this exact trade played out 10,000 times on random real days from the asset's recent past.
+function oddsBox(d, cur) {
+  if (!d) return "";
+  const seg = (w, color, op = 1, tip = "") => w > 0 ? `<div title="${tip}" style="width:${w}%;background:${color};opacity:${op}"></div>` : "";
+  const n = (v) => Math.round(v);
+  const long = d.trading_days ? `${d.days} trading days (about a month)` : `${d.days} days`;
+  const said = [];
+  if (d.target) said.push(`<b class="up">${n(d.target)}</b> reached the take-profit`);
+  if (d.stop_profit) said.push(`<b class="up">${n(d.stop_profit)}</b> were closed by the moving safety net with a gain`);
+  if (d.stop_loss) said.push(`<b class="down">${n(d.stop_loss)}</b> hit the safety net at a loss`);
+  if (d.open) said.push(`<b>${n(d.open)}</b> were still open after ${long}`);
+  const verdict = d.avg > 0
+    ? `<span class="up">On average +${money(d.avg, cur).replace("-", "")} per trade.</span> The odds lean your way.`
+    : `<span class="down">On average ${money(d.avg, cur)} per trade.</span> ` + (d.profit_chance >= 55
+      ? `It wins often, but each loss (${money(-Math.abs(d.bad), cur)}) is much bigger than each win, so it loses over time.`
+      : "The odds are against this trade.");
+  return `<div class="tile" style="margin-top:10px">
+    <div class="note"><b>Odds check:</b> this trade played 10,000 times on random real days from the last 2 years</div>
+    <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin:8px 0;background:var(--line)">
+      ${seg(d.target, "var(--good)", 1, "Take-profit")}${seg(d.stop_profit, "var(--good)", .5, "Safety net, with a gain")}${seg(d.open, "#98a2b3", 1, "Still open")}${seg(d.stop_loss, "var(--bad)", 1, "Safety net, at a loss")}
+    </div>
+    <div class="note">Out of every 100 runs: ${said.join(", ")}. ${verdict}
+      Range: 1 in 10 runs did better than ${money(d.good, cur)}, 1 in 10 worse than ${money(d.bad, cur)}.
+      This is the past replayed at random, not a prediction: it knows nothing about news.</div>
+  </div>`;
+}
+let ideasProtect = {};
+function ideaCard(i) {
+  const p = i.proposal, cur = i.currency, buy = i.action === "Buy";
+  const when = i.signal_days === 0 ? "today" : i.signal_days === 1 ? "yesterday" : i.signal_days + " days ago";
+  const meter = `<span class="meter" title="Confidence ${i.score}/100"><span style="width:${i.score}%"></span></span>`;
+  const r = i.record;
+  return `<div class="card idea">
+    <div class="idea-head">
+      <h3>${buy ? "Buy" : "Sell short"} ${esc(i.name)}</h3><span class="chip">${esc(i.market_name)}</span>
+      <span class="score ${i.label.split(" ")[0]}">${esc(i.label)} idea · ${i.score}/100 ${meter}</span>
+    </div>
+    <p class="note" style="margin:6px 0 0">${buy ? "Betting the price will rise." : "Betting the price will fall."}
+      Signal from the <b>${esc(i.method)}</b> method, ${when}.</p>
+    ${p.qty ? outcome({...p, cur, units: i.units, price: i.price, protect: ideasProtect}) : ""}
+    ${p.ok ? "" : `<div class="blocked">Not recommended: ${esc(p.why)}</div>`}
+    <div class="actions">
+      ${p.ok ? `<button class="btn" onclick='approve(${JSON.stringify(i.id)}, ${JSON.stringify((buy ? "Buy " : "Sell short ") + qty(p.qty) + " " + i.units + " of " + i.name + " for about " + money(p.size, cur) + "\nIf it goes wrong: -" + money(p.risk, cur) + (p.gain != null ? "\nIf it goes well: +" + money(p.gain, cur) : ""))})'>Approve trade</button>` : ""}
+      <button class="btn ghost" onclick='openChart(${JSON.stringify(i.market)}, ${JSON.stringify(i.symbol)})'>See chart</button>
+      <button class="btn ghost" onclick='skip(${JSON.stringify(i.id)})'>${p.ok ? "Skip" : "Hide"}</button>
+    </div>
+    <details><summary>Why this idea?</summary>
+      <div class="cols" style="margin-top:6px">
+        <div><h4 class="up">Reasons for</h4><ul>${i.pros.map(x => `<li>${esc(x)}</li>`).join("") || "<li>None</li>"}</ul></div>
+        <div><h4 class="down">Reasons against</h4><ul>${i.cons.map(x => `<li>${esc(x)}</li>`).join("") || "<li>None</li>"}</ul></div>
+      </div>
+      <div class="method"><b>How the ${esc(i.method)} method works:</b> ${esc(i.rule)}
+        Over ${r.years} years on ${esc(i.name)}: ${pct0(r.return)} total, ${Math.round(r.win_rate * 100)}% of ${r.trades} trades won, worst drop ${pct0(r.worst_drop)}.
+        Simply buying and holding: ${pct0(r.hold_return)}.</div>
+    </details>
+  </div>`;
+}
+async function approve(id, what) {
+  if (!confirm(`Place this practice trade?\n\n${what}`)) return;
+  try { toast((await api("/api/approve", {id})).message); } catch (e) { toast(e.message, false); }
+  loadIdeas(); loadOverview();
+}
+function skip(id) { skipped.add(id); loadIdeas(); }
+
+// ---- settings: mode, daily check, auto rules, safety rules ----
+const RULE_HELP = {
+  min_score: ["Minimum confidence", "out of 100", 1],
+  risk_per_trade_pct: ["Most a single trade can lose", "% of the account", 0.1],
+  max_position_pct: ["Biggest single trade", "% of the account", 1],
+  max_open_positions: ["Most open trades", "per account", 1],
+  daily_loss_limit_pct: ["Stop new trades after a daily loss of", "% of the account", 0.5],
+};
+let stData = null;
+async function loadSettings() {
+  try { stData = await api("/api/settings"); } catch (e) { return; }
+  const d = stData, s = d.settings;
+  // Home summary
+  const auto = s.mode === "auto";
+  const marketNames = d.markets.filter(m => s.auto.markets.includes(m.id)).map(m => m.name).join(", ");
+  document.getElementById("modeSummary").innerHTML = auto
+    ? `<b>Auto mode.</b> At ${esc(s.check.time)} each day the app trades by your rules in: ${esc(marketNames)}. Other markets: suggestions only.`
+    : `<b>Manual mode.</b> Nothing is traded without your approval.` + (s.check.enabled ? ` Daily check at ${esc(s.check.time)} sends notifications.` : " Daily check is off.");
+  // Settings page
+  document.querySelectorAll('input[name="mode"]').forEach(r => r.checked = r.value === s.mode);
+  document.getElementById("dcOn").checked = s.check.enabled;
+  document.getElementById("dcTime").value = s.check.time;
+  document.getElementById("dcRun").disabled = d.checking;
+  const state = s.check.enabled ? (d.scheduled ? `On: every day at ${s.check.time}.` : "On, but Windows has no task for it. Click Save settings again.") : "Off.";
+  document.getElementById("dcStatus").innerHTML = esc(state) + (d.checking ? " Checking now..." : "") +
+    (d.last ? `<br>Last check ${esc(d.last.time)}: ${esc(d.last.summary)}` : "");
+  const tag = (v, yrs) => v == null ? `<span class="note">no report card yet</span>`
+    : `<span class="${cls(v)}">${pct0(v)}</span> <span class="note">in the report card${yrs ? ` (${yrs} years)` : ""}</span>`;
+  document.getElementById("stMarkets").innerHTML = d.markets.map(m => `<label><input type="checkbox" class="stMarket" value="${esc(m.id)}"
+      ${s.auto.markets.includes(m.id) ? "checked" : ""}> <b>${esc(m.name)}</b> <span class="note">(${esc(m.broker)})</span> · ${tag(m.report, m.years)}</label>`).join("");
+  document.getElementById("stMethods").innerHTML = d.methods.map(m => `<label><input type="checkbox" class="stMethod" value="${esc(m.name)}"
+      ${s.auto.methods.includes(m.name) ? "checked" : ""}> <b>${esc(m.name)}</b> ·
+      ${m.report_pnl == null ? `<span class="note">not used in the report card</span>` : `<span class="${cls(m.report_pnl)}">${money(m.report_pnl)}</span> <span class="note">across all markets in the report card</span>`}
+      <br><span class="note" style="margin-left:22px">${esc(m.rule)}</span></label>`).join("");
+  document.getElementById("stRules").innerHTML = Object.entries(RULE_HELP).map(([k, [label, unit, step]]) => {
+    const [lo, hi] = d.limits[k];
+    return `<label>${esc(label)} <input type="number" class="stRule" data-key="${k}" value="${d.rules[k]}" min="${lo}" max="${hi}" step="${step}"
+      style="font:inherit;width:90px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)"> ${esc(unit)}
+      <span class="note">(allowed ${lo} to ${hi})</span></label>`;
+  }).join("");
+  document.querySelectorAll('input[name="tpMode"]').forEach(r => r.checked = r.value === s.take_profit.mode);
+  document.getElementById("tpValue").value = s.take_profit.value;
+  tpModeChanged(true);
+  document.getElementById("prTrail").checked = s.protect.trailing.on;
+  document.getElementById("prTrailDist").value = s.protect.trailing.distance;
+  document.getElementById("prBe").checked = s.protect.breakeven.on;
+  document.getElementById("prBeAt").value = s.protect.breakeven.at;
+  stRender();
+  if (d.checking) setTimeout(loadSettings, 2000);
+}
+const TP_UNITS = {risk: ["× what the trade risked", 2, 0.5], percent: ["% gain", 5, 0.5], amount: ["$ profit per trade", 500, 1]};
+function tpModeChanged(keep) {
+  const mode = document.querySelector('input[name="tpMode"]:checked')?.value || "risk";
+  document.getElementById("tpValueRow").style.display = mode === "off" ? "none" : "";
+  if (mode !== "off") {
+    document.getElementById("tpUnit").textContent = TP_UNITS[mode][0];
+    if (!keep) document.getElementById("tpValue").value = TP_UNITS[mode][1];
+  }
+}
+// Settings search: extra words people might type for each section, so "stop loss" finds the safety net.
+const ST_KEYWORDS = {
+  1: "trading mode manual auto automatic approve approval who decides robot bot",
+  2: "daily check time schedule scheduled notification notify alert reminder morning every day 08:00",
+  3: "auto mode rules markets methods automatic which assets us stocks crypto forex dhaka",
+  4: "safety rules risk loss lose limit confidence minimum score trade size biggest position open trades maximum daily loss stop trading",
+  5: "take profit target close winning winner gain considerable money lock sell automatically",
+  6: "protect profits trailing break-even breakeven stop loss stoploss safety net lower risk reduce risk lock in",
+};
+const ST_ELSEWHERE = [
+  ["dark light theme colour color night mode", "Dark / Light mode: use the switch at the top of the window.", null],
+  ["method methods strategy strategies indicator builder build supertrend rsi macd", "Methods (which rules find trades, build your own): on the Methods page.", "methods"],
+  ["alpaca keys key api env broker account connect binance oanda", "Account keys: How it works > Open settings folder > .env file.", "help"],
+  ["pause stop all trading kill switch", "Pause all trading: on the Home page.", "home"],
+  ["chart charts minute candles line", "Charts: on the Charts page.", "charts"],
+  ["report card results performance history", "Results and report card: on the Results page.", "results"],
+  ["odds chance practice runs simulation time machine", "Odds check: shown under every trade idea and in the Charts trade panel.", "ideas"],
+  ["track record ideas log decisions", "Track record of trade ideas: on the Results page.", "results"],
+];
+function stFilter() {
+  const q = document.getElementById("stSearch").value.trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  let shown = 0;
+  document.querySelectorAll("#settings .stCard").forEach(card => {
+    const hay = (ST_KEYWORDS[card.dataset.n] + " " + card.innerText).toLowerCase();
+    const hit = !words.length || words.every(w => hay.includes(w));
+    card.style.display = hit ? "" : "none";
+    if (hit) shown++;
+    card.style.outline = words.length && hit ? "2px solid var(--accent)" : "";
+  });
+  const other = words.length ? ST_ELSEWHERE.filter(([k]) => words.every(w => k.includes(w) || k.split(" ").some(x => x.startsWith(w)))) : [];
+  document.getElementById("stSearchInfo").textContent = !words.length ? "" :
+    shown ? `${shown} matching section${shown > 1 ? "s" : ""} below.` : "No settings match.";
+  document.getElementById("stElsewhere").innerHTML = other.map(([, text, tab]) =>
+    `<p class="note" style="margin:6px 0 0">${esc(text)}${tab ? ` <button class="btn small ghost" onclick="showTab('${tab}')">Go there</button>` : ""}</p>`).join("");
+}
+function stRender() {
+  const auto = document.querySelector('input[name="mode"]:checked')?.value === "auto";
+  document.getElementById("autoCard").style.opacity = auto ? 1 : 0.55;
+}
+async function stSave() {
+  const mode = document.querySelector('input[name="mode"]:checked')?.value || "manual";
+  const body = {
+    mode,
+    check: {enabled: document.getElementById("dcOn").checked, time: document.getElementById("dcTime").value || "08:00"},
+    auto: {markets: [...document.querySelectorAll(".stMarket:checked")].map(x => x.value),
+           methods: [...document.querySelectorAll(".stMethod:checked")].map(x => x.value)},
+    rules: Object.fromEntries([...document.querySelectorAll(".stRule")].map(x => [x.dataset.key, parseFloat(x.value)])),
+    take_profit: {mode: document.querySelector('input[name="tpMode"]:checked')?.value || "risk",
+                  value: parseFloat(document.getElementById("tpValue").value)},
+    protect: {trailing: {on: document.getElementById("prTrail").checked, distance: parseFloat(document.getElementById("prTrailDist").value)},
+              breakeven: {on: document.getElementById("prBe").checked, at: parseFloat(document.getElementById("prBeAt").value)}},
+  };
+  if (mode === "auto" && stData.settings.mode !== "auto" &&
+      !confirm("Auto mode: every day at the check time, the app will place and close practice trades by itself, following your rules. Turn it on?")) return;
+  try {
+    await api("/api/settings", body);
+    toast(mode === "auto" ? `Saved. Auto mode is on: the app trades at ${body.check.time} each day.` : "Saved. Manual mode: nothing is traded without you.");
+  } catch (e) { return toast(e.message, false); }
+  loadSettings(); loadOverview();
+}
+async function runDaily() {
+  try { await api("/api/daily-run", {}); } catch (e) { return toast(e.message, false); }
+  toast(stData?.settings.mode === "auto" ? "Running the check: in your auto markets it may place or close practice trades."
+                                         : "Checking all markets. A notification appears if there is something to do.");
+  loadSettings();
+}
+
+// ---- charts ----
+let chartRange = "month", chartReady = false, chartData = null;
+async function initCharts(market, symbol) {
+  const sel = document.getElementById("chartSymbol");
+  if (!chartReady) {
+    const list = await api("/api/symbols");
+    const groups = {};
+    list.forEach(s => (groups[s.market_name] ||= []).push(s));
+    sel.innerHTML = Object.entries(groups).map(([g, items]) => `<optgroup label="${esc(g)}">${items.map(s =>
+      `<option value="${esc(s.market + "|" + s.symbol)}">${esc(s.name)}</option>`).join("")}</optgroup>`).join("");
+    document.querySelectorAll("#rangeBtns button").forEach(b => b.onclick = () => { chartRange = b.dataset.range; loadChart(); });
+    chartReady = true;
+  }
+  if (market) sel.value = market + "|" + symbol;
+  loadChart();
+}
+function openChart(market, symbol) {
+  document.querySelectorAll("section").forEach(s => s.classList.toggle("show", s.id === "charts"));
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("active", b.dataset.tab === "charts"));
+  window.scrollTo(0, 0);
+  initCharts(market, symbol);
+}
+let liveTimer = null, chartKey = "";
+async function loadChart(silent = false) {
+  clearTimeout(liveTimer);
+  const [market, symbol] = document.getElementById("chartSymbol").value.split("|");
+  const key = market + "|" + symbol;
+  document.querySelectorAll("#rangeBtns button").forEach(b => b.className = "btn small" + (b.dataset.range === chartRange ? "" : " ghost"));
+  const box = document.getElementById("chartBox");
+  if (!silent) document.getElementById("chartNote").textContent = "Loading chart...";
+  if (key !== chartKey) { chartKey = key; document.getElementById("tpAmount").value = ""; tpQuote(); }
+  try {
+    chartData = await api(`/api/chart?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}&range=${chartRange}`);
+  } catch (e) {
+    if (!silent) { destroyChart(); box.innerHTML = `<div class="notice info">${esc(e.message)}</div>`; document.getElementById("chartNote").textContent = ""; }
+    return scheduleLive();
+  }
+  const c = chartData, label = {minute: "today", day: "today", week: "this week", month: "this month", year: "this year"}[c.range];
+  const badge = c.live ? `<span class="pill">&#9679; Live</span>` : (c.times_in ? `<span class="chip">Market closed or delayed</span>` : "");
+  document.getElementById("chartHead").innerHTML = `<div class="idea-head"><h3>${esc(c.name)}</h3><span class="chip">${esc(c.market)}</span>${badge}
+    <span style="margin-left:auto;font-size:20px;font-weight:600">${price(c.last)}</span>
+    <span class="${cls(c.change_pct)}">${pct(c.change_pct)} ${label}</span></div>`;
+  renderChart(c, silent);
+  const every = c.range === "minute" ? "1 minute" : c.range === "day" ? "5 minutes" : c.range === "week" && c.market === "Crypto" ? "1 hour" : "30 minutes";
+  document.getElementById("chartNote").textContent = (c.times_in ? `Times are ${c.times_in}. Each candle is ${every}. ` : "Each candle is one day. ")
+    + `Prices: ${c.source}, latest ${c.last_time}.` + (c.live && ["minute", "day"].includes(c.range) ? " The newest candle moves with the live price every 2 seconds." : c.live ? " Updates every minute." : "");
+  startQuotes();
+  if (silent && tpLast) tpQuote();  // keep the trade preview on the latest price
+  scheduleLive();
+}
+// Smooth chart (TradingView Lightweight Charts); the simple drawing below is the fallback.
+var lw = null, lwSeries = null, lwKind = "candles", lwLines = [], lwShown = "", lwLastTime = null;  // var: the theme switch may call chartThemeChanged before this line runs
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function lwColors() {
+  return {bg: cssVar("--card"), text: cssVar("--muted"), line: cssVar("--line"), up: cssVar("--good"),
+          down: cssVar("--bad"), accent: cssVar("--accent")};
+}
+function destroyChart() { if (lw) { lw.remove(); lw = null; lwSeries = null; lwShown = ""; } }
+function chartThemeChanged() {
+  if (!lw) return;
+  const c = lwColors();
+  lw.applyOptions({layout: {background: {type: "solid", color: c.bg}, textColor: c.text},
+                   grid: {vertLines: {color: c.line}, horzLines: {color: c.line}},
+                   rightPriceScale: {borderColor: c.line}, timeScale: {borderColor: c.line}});
+  if (chartData) renderChart(chartData, false, true);
+}
+function setChartKind(k) {
+  lwKind = k;
+  document.querySelectorAll("#kindBtns button").forEach(b => b.className = "btn small" + (b.dataset.kind === k ? "" : " ghost"));
+  if (chartData) renderChart(chartData, false, true);
+}
+function lwPoint(b) { return lwKind === "candles" ? {time: b.time, open: b.o, high: b.h, low: b.l, close: b.c} : {time: b.time, value: b.c}; }
+function renderChart(c, silent, rebuild) {
+  const box = document.getElementById("chartBox");
+  if (!window.LightweightCharts) { box.innerHTML = candleChart(c); return; }  // library missing: simple chart
+  const colors = lwColors(), intraday = !!c.times_in, shown = [c.symbol, c.range, lwKind].join("|");
+  if (!lw) {
+    box.innerHTML = `<div id="lwBox" style="height:420px"></div>
+      <div id="lwLegend" class="note" style="position:absolute;top:6px;left:10px;z-index:2;pointer-events:none"></div>`;
+    lw = LightweightCharts.createChart(document.getElementById("lwBox"), {
+      autoSize: true, crosshair: {mode: 0},
+      layout: {background: {type: "solid", color: colors.bg}, textColor: colors.text, fontFamily: "Segoe UI, system-ui, sans-serif"},
+      grid: {vertLines: {color: colors.line}, horzLines: {color: colors.line}},
+      rightPriceScale: {borderColor: colors.line}, timeScale: {borderColor: colors.line, rightOffset: 4},
+    });
+    lw.subscribeCrosshairMove(p => lwLegend(p.time ? chartData.bars.find(b => b.time === p.time) : null));
+  }
+  lw.applyOptions({timeScale: {timeVisible: intraday, secondsVisible: false}});
+  if (rebuild || shown !== lwShown || !lwSeries) {
+    if (lwSeries) lw.removeSeries(lwSeries);
+    lwSeries = lwKind === "candles"
+      ? lw.addCandlestickSeries({upColor: colors.up, downColor: colors.down, borderVisible: false,
+                                 wickUpColor: colors.up, wickDownColor: colors.down})
+      : lw.addAreaSeries({lineColor: colors.accent, topColor: colors.accent + "55", bottomColor: colors.accent + "05", lineWidth: 2});
+    lwSeries.setData(c.bars.map(lwPoint));
+    lw.timeScale().fitContent();
+    lwLines = [];
+    lwShown = shown;
+  } else {
+    // Live refresh: only add/extend the newest candles, so the chart moves smoothly instead of redrawing.
+    c.bars.filter(b => lwLastTime === null || b.time >= lwLastTime).forEach(b => lwSeries.update(lwPoint(b)));
+  }
+  lwLastTime = c.bars.length ? c.bars[c.bars.length - 1].time : null;
+  lwLines.forEach(l => lwSeries.removePriceLine(l));
+  lwLines = c.lines.map(l => lwSeries.createPriceLine({price: l.v, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: l.label,
+    color: l.label.startsWith("Safety") ? colors.down : l.label.startsWith("Take") ? colors.up : colors.accent}));
+  lwLegend(null);
+}
+function lwLegend(b) {
+  const el = document.getElementById("lwLegend");
+  if (!el || !chartData) return;
+  b = b || chartData.bars[chartData.bars.length - 1];
+  if (!b) { el.innerHTML = ""; return; }
+  el.innerHTML = `<b style="color:var(--text)">${esc(b.t)}</b> &nbsp; Open ${price(b.o)} · High ${price(b.h)} · Low ${price(b.l)} · Close <b class="${cls(b.c - b.o)}">${price(b.c)}</b>`;
+}
+
+function scheduleLive() {
+  clearTimeout(liveTimer);
+  if (!document.getElementById("charts").classList.contains("show") || !["minute", "day", "week"].includes(chartRange)) return;
+  liveTimer = setTimeout(() => loadChart(true), chartRange === "week" ? 60000 : 30000);
+}
+
+// Newest candle follows the live price every 2 seconds (1 min and Day views).
+let quoteTimer = null;
+function startQuotes() {
+  clearTimeout(quoteTimer);
+  if (!chartData || !chartData.live || !["minute", "day"].includes(chartData.range)) return;
+  quoteTimer = setTimeout(quoteTick, 2000);
+}
+async function quoteTick() {
+  if (!document.getElementById("charts").classList.contains("show") || !chartData || !["minute", "day"].includes(chartData.range)) return;
+  const [market, symbol] = document.getElementById("chartSymbol").value.split("|");
+  if (symbol !== chartData.symbol) return;
+  let q;
+  try { q = await api(`/api/quote?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}`); } catch (e) { return startQuotes(); }
+  const span = chartData.range === "minute" ? 60 : 300, bucket = Math.floor(q.time_key / span) * span;
+  const bars = chartData.bars, last = bars[bars.length - 1];
+  if (last && typeof last.time === "number") {
+    if (bucket <= last.time) {
+      last.c = q.price; last.h = Math.max(last.h, q.price); last.l = Math.min(last.l, q.price);
+    } else {
+      const d = new Date(bucket * 1000);
+      bars.push({time: bucket, o: last.c, h: Math.max(last.c, q.price), l: Math.min(last.c, q.price), c: q.price,
+                 t: d.toUTCString().slice(5, 11) + " " + d.toISOString().slice(11, 16)});
+    }
+    if (lwSeries) lwSeries.update(lwPoint(bars[bars.length - 1]));
+    lwLegend(null);
+    const priceEl = document.querySelector("#chartHead span[style*='font-size:20px']");
+    if (priceEl) priceEl.textContent = price(q.price);
+  }
+  startQuotes();
+}
+
+// ---- trade panel (your own practice trades) ----
+let tpSideVal = 1, tpLast = null, tpTimer = null;
+function tpSide(s) {
+  tpSideVal = s;
+  document.getElementById("tpBuy").className = "btn small" + (s > 0 ? "" : " ghost");
+  document.getElementById("tpSell").className = "btn small" + (s < 0 ? "" : " ghost");
+  tpQuote();
+}
+function tpQuoteSoon() { clearTimeout(tpTimer); tpTimer = setTimeout(tpQuote, 400); }
+async function tpQuote() {
+  const [market, symbol] = document.getElementById("chartSymbol").value.split("|");
+  const sel = document.getElementById("chartSymbol");
+  document.getElementById("tpName").textContent = sel.options[sel.selectedIndex]?.text || "";
+  const amount = parseFloat(document.getElementById("tpAmount").value) || null;
+  const box = document.getElementById("tpPreview"), btn = document.getElementById("tpPlace");
+  let q;
+  try { q = await api("/api/manual-quote", {market, symbol, side: tpSideVal, amount}); }
+  catch (e) { tpLast = null; btn.disabled = true; box.innerHTML = `<div class="blocked" style="margin:0">${esc(e.message)}</div>`; return; }
+  tpLast = {market, symbol, amount, q};
+  const buy = q.side > 0, cur = q.currency;
+  document.getElementById("tpAmount").placeholder = Math.round(q.suggested_size).toLocaleString();
+  document.getElementById("tpCur").textContent = cur === "BDT" ? "(৳)" : "($)";
+  box.innerHTML = `
+    <p style="margin:0"><b>${buy ? "Buy" : "Sell short"}:</b> ${buy ? "you profit if the price rises." : "you profit if the price falls."}
+      <span class="note">${q.live ? "Live price" : "Last price"} from ${esc(q.price_time)}.</span></p>
+    ${outcome({...q, cur})}
+    <p class="note" style="margin-top:10px">Your limit per trade is ${money(q.max_risk, cur)} of possible loss (${q.risk_pct.toFixed(2)}% of the account used here).
+      ${q.target ? `Take-profit ${esc(q.target_how)}.` : "Take-profit is off in Settings."}
+      Account: ${esc(q.account)}.${q.live ? "" : " The market looks closed or delayed: a US order waits for the market to open; other practice trades fill at the last price."}</p>
+    ${q.ok ? "" : `<div class="blocked">${esc(q.why)}</div>`}`;
+  btn.disabled = !q.ok;
+  btn.textContent = `Place practice trade: ${buy ? "buy" : "sell short"} ${qty(q.qty)} ${q.units}`;
+}
+async function tpPlace() {
+  if (!tpLast) return;
+  const {market, symbol, amount, q} = tpLast;
+  const name = document.getElementById("tpName").textContent;
+  if (!confirm(`Place this practice trade?\n\n${q.side > 0 ? "Buy" : "Sell short"} ${qty(q.qty)} ${q.units} of ${name} at about ${price(q.price)}\nSafety net: ${price(q.stop)}\nMost you'd likely lose: ${money(q.risk, q.currency)}` +
+               (q.target ? `\nTake profit: ${price(q.target)} (about +${money(q.gain, q.currency)})` : ""))) return;
+  try { toast((await api("/api/manual-trade", {market, symbol, side: q.side, amount})).message); }
+  catch (e) { toast(e.message, false); }
+  loadChart(true); tpQuote();
+}
+function candleChart(c) {
+  const W = 900, Hh = 380, L = 8, R = 70, T = 10, B = 26, bars = c.bars;
+  const vals = bars.flatMap(b => [b.h, b.l]).concat(c.lines.map(l => l.v));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const padv = (hi - lo) * 0.05 || hi * 0.01; lo -= padv; hi += padv;
+  const y = v => T + (1 - (v - lo) / (hi - lo)) * (Hh - T - B);
+  const step = (W - L - R) / bars.length, bw = Math.max(1, step * 0.7);
+  const x = i => L + step * (i + 0.5);
+  const up = getComputedStyle(document.documentElement).getPropertyValue("--good").trim();
+  const down = getComputedStyle(document.documentElement).getPropertyValue("--bad").trim();
+  let svg = "";
+  for (let k = 0; k <= 4; k++) {  // grid + price labels
+    const v = lo + (hi - lo) * k / 4, yy = y(v);
+    svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)"/>
+            <text x="${W - R + 6}" y="${yy + 4}" font-size="15" fill="var(--muted)">${price(v)}</text>`;
+  }
+  bars.forEach((b, i) => {
+    const col = b.c >= b.o ? up : down;
+    svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${y(b.h)}" y2="${y(b.l)}" stroke="${col}"/>
+            <rect x="${x(i) - bw / 2}" y="${y(Math.max(b.o, b.c))}" width="${bw}" height="${Math.max(1, Math.abs(y(b.o) - y(b.c)))}" fill="${col}"/>`;
+  });
+  c.lines.forEach(l => {
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y(l.v)}" y2="${y(l.v)}" stroke="var(--accent)" stroke-dasharray="6 4"/>
+            <text x="${L + 4}" y="${y(l.v) - 4}" font-size="15" fill="var(--accent)">${esc(l.label)} ${price(l.v)}</text>`;
+  });
+  [0, Math.floor(bars.length / 2), bars.length - 1].forEach((i, k) => {
+    svg += `<text x="${x(i)}" y="${Hh - 6}" font-size="15" fill="var(--muted)" text-anchor="${["start", "middle", "end"][k]}">${esc(bars[i].t)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:auto" role="img" aria-label="Candlestick price chart"
+      onmousemove="chartHover(event, this)" onmouseleave="document.getElementById('chartTip').style.display='none'">${svg}
+      <line id="chartCursor" y1="${T}" y2="${Hh - B}" stroke="var(--muted)" stroke-width="1" style="display:none"/></svg>
+    <div id="chartTip" style="display:none;position:absolute;top:8px;left:8px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;pointer-events:none"></div>`;
+}
+function chartHover(ev, svg) {
+  const c = chartData, rect = svg.getBoundingClientRect(), W = 900, L = 8, R = 70;
+  const px = (ev.clientX - rect.left) / rect.width * W;
+  const i = Math.floor((px - L) / ((W - L - R) / c.bars.length));
+  const tip = document.getElementById("chartTip"), cur = document.getElementById("chartCursor");
+  if (i < 0 || i >= c.bars.length) { tip.style.display = "none"; cur.style.display = "none"; return; }
+  const b = c.bars[i], cx = L + (W - L - R) / c.bars.length * (i + 0.5);
+  cur.setAttribute("x1", cx); cur.setAttribute("x2", cx); cur.style.display = "";
+  tip.innerHTML = `<b>${esc(b.t)}</b><br>Open ${price(b.o)} · High ${price(b.h)}<br>Low ${price(b.l)} · Close <b class="${cls(b.c - b.o)}">${price(b.c)}</b>`;
+  tip.style.display = "block";
+}
+
+// ---- methods ----
+let mData = null;
+const B_DEFAULTS = {n: 50, a: 20, b: 50, x: 30};
+const B_TYPE_DEFAULTS = {rsi: {n: 14, x: 30}, volume: {x: 1.5, n: 20}, change: {x: 5, n: 20}, adx: {x: 25}, new_high: {n: 20}, new_low: {n: 20}};
+const bRows = {entry: [], exit: []};
+const isChoice = allowed => typeof allowed[0] === "string";  // ["above", "below"] vs a number range [min, max]
+
+function resultRows(card, cur) {
+  if (!card) return `<p class="note">Not tested yet. Click <b>Test all methods</b> above.</p>`;
+  return `<div class="table-wrap"><table><tr><th>Market</th><th>This method</th><th>Buy and hold</th><th>Beat holding on</th><th>Trades</th><th>Won</th></tr>
+    ${Object.entries(card).map(([m, r]) => `<tr><td>${esc(mData.market_names[m] || m)}</td>
+      <td class="${cls(r.avg_return)}">${pct0(r.avg_return)}</td><td>${pct0(r.hold_return)}</td>
+      <td>${r.beat_hold} of ${r.assets} assets</td><td>${r.trades}</td><td>${r.trades ? Math.round(r.win_rate * 100) + "%" : "-"}</td></tr>`).join("")}
+  </table></div>`;
+}
+async function loadMethods() {
+  try { mData = await api("/api/methods"); } catch (e) { return toast(e.message, false); }
+  const s = mData.card_status;
+  document.getElementById("mcBtn").disabled = s.running;
+  document.getElementById("mcText").textContent = s.running ? s.step + "..." : s.error ? "Something went wrong: " + s.error
+    : mData.card_created ? "Last tested " + mData.card_created : "Not tested yet (about 15 seconds).";
+  const card = m => `<div class="card idea">
+    <div class="idea-head"><h3>${esc(m.name)}</h3>${m.best ? `<span class="pill">&#10003; Passed the test</span>` : ""}<span class="chip">${esc(m.source)}</span><span class="chip">${esc(m.family)}</span>
+      <label style="margin-left:auto;font-weight:600"><input type="checkbox" ${m.enabled ? "checked" : ""}
+        onchange='toggleMethod(${JSON.stringify(m.name)}, this.checked)'> ${m.enabled ? "On" : "Off"}</label></div>
+    <p class="note" style="margin:8px 0">${esc(m.rule)}</p>
+    ${resultRows(m.card)}
+    ${m.custom ? `<div class="actions"><button class="btn small ghost" onclick='deleteMethod(${JSON.stringify(m.name)})'>Delete</button></div>` : ""}
+  </div>`;
+  const on = mData.methods.filter(m => m.enabled), off = mData.methods.filter(m => !m.enabled);
+  document.getElementById("mSummary").innerHTML = `<b>${on.length} of ${mData.methods.length} methods are switched on</b> and look for trade ideas: ${esc(on.map(m => m.name).join(", "))}.`;
+  document.getElementById("methodList").innerHTML =
+    `<h3>Switched on (${on.length})</h3>` + on.map(card).join("") +
+    `<details ${on.length ? "" : "open"}><summary>Switched off (${off.length}): tap to see and switch on</summary>${off.map(card).join("")}</details>`;
+  const fam = document.getElementById("bFamily");
+  if (!fam.options.length) {
+    fam.innerHTML = Object.entries(mData.families).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+    if (!bRows.entry.length) bAdd("entry");
+  }
+  if (s.running) setTimeout(loadMethods, 1500);
+}
+async function presetMethods(preset) {
+  const label = {best: "Best tested", original: "Original 7", all: "All methods"}[preset];
+  if (!confirm(`Switch to "${label}"? This replaces which methods are on.`)) return;
+  try { await api("/api/methods", {action: "preset", preset}); toast(`${label} switched on.`); } catch (e) { toast(e.message, false); }
+  loadMethods();
+}
+async function loadIdeasMethods() {
+  let d;
+  try { d = await api("/api/methods"); } catch (e) { return; }
+  const on = d.methods.filter(m => m.enabled).map(m => m.name);
+  document.getElementById("ideasMethods").innerHTML = `Looking for trades with <b>${on.length} of ${d.methods.length} methods</b>: ${esc(on.join(", "))}.
+    <button class="btn small ghost" style="margin-left:6px" onclick="showTab('methods')">Change methods</button>`;
+}
+async function runMethodCard() {
+  try { await api("/api/method-card", {}); } catch (e) { return toast(e.message, false); }
+  loadMethods();
+}
+async function toggleMethod(name, on) {
+  try { await api("/api/methods", {action: "toggle", name, on}); toast(`${name} switched ${on ? "on" : "off"}.`); }
+  catch (e) { toast(e.message, false); }
+  loadMethods();
+}
+async function deleteMethod(name) {
+  if (!confirm(`Delete your method "${name}"?`)) return;
+  try { await api("/api/methods", {action: "delete", name}); toast("Deleted."); } catch (e) { toast(e.message, false); }
+  loadMethods();
+}
+
+// builder
+function bAdd(kind) {
+  if (bRows[kind].length >= (mData?.max_conditions || 5)) return toast("At most 5 conditions.", false);
+  const type = kind === "entry" ? "price_vs_ma" : "rsi";
+  bRows[kind].push(bDefaults(type, kind));
+  bRender();
+}
+function bDefaults(type, kind) {
+  const row = {type}, params = mData.conditions[type].params;
+  for (const [k, allowed] of Object.entries(params)) {
+    row[k] = isChoice(allowed) ? allowed[0] : (B_TYPE_DEFAULTS[type]?.[k] ?? B_DEFAULTS[k] ?? allowed[0]);
+  }
+  if (type === "rsi" && kind === "exit") { row.op = "above"; row.x = 60; }
+  return row;
+}
+function bRender() {
+  const input = "font:inherit;padding:4px 6px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)";
+  for (const kind of ["entry", "exit"]) {
+    document.getElementById(kind === "entry" ? "bEntry" : "bExit").innerHTML = bRows[kind].map((row, i) => {
+      const spec = mData.conditions[row.type];
+      const typeSel = `<select style="${input}" onchange="bSetType('${kind}', ${i}, this.value)">${Object.entries(mData.conditions).map(([k, c]) =>
+        `<option value="${k}" ${k === row.type ? "selected" : ""}>${esc(c.label.replace(/\{\w+\}/g, "…"))}</option>`).join("")}</select>`;
+      const params = Object.entries(spec.params).map(([k, allowed]) => isChoice(allowed)
+        ? `<label>${esc(k === "op" ? "" : k)} <select style="${input}" onchange="bSet('${kind}', ${i}, '${k}', this.value)">${allowed.map(v =>
+            `<option ${v === row[k] ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>`
+        : `<label>${esc({n: "days", a: "fast days", b: "slow days", x: "value"}[k] || k)} <input type="number" style="${input};width:80px"
+            min="${allowed[0]}" max="${allowed[1]}" step="any" value="${row[k]}" onchange="bSet('${kind}', ${i}, '${k}', this.value)"></label>`).join(" ");
+      return `<div class="plan" style="margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${typeSel} ${params}
+        <span class="note" style="flex-basis:100%">${esc(spec.label.replace(/\{(\w+)\}/g, (_, k) => row[k]))}</span>
+        <button class="btn small ghost" onclick="bRows['${kind}'].splice(${i}, 1); bRender()">Remove</button></div>`;
+    }).join("") || `<p class="note">${kind === "entry" ? "Add at least one condition." : "None: sells when the buy conditions stop being true."}</p>`;
+  }
+}
+function bSetType(kind, i, type) { bRows[kind][i] = bDefaults(type, kind); bRender(); }
+function bSet(kind, i, k, v) { bRows[kind][i][k] = isChoice(mData.conditions[bRows[kind][i].type].params[k]) ? v : parseFloat(v); bRender(); }
+function bBody() {
+  return {name: document.getElementById("bName").value.trim(), family: document.getElementById("bFamily").value,
+          entry: bRows.entry, exit: bRows.exit};
+}
+async function bTest() {
+  const box = document.getElementById("bResult");
+  box.innerHTML = `<p class="note">Testing on every asset...</p>`;
+  try {
+    const r = await api("/api/method-test", bBody());
+    box.innerHTML = `<p><b>${esc(r.rule)}</b></p>` + resultRows(r.results);
+  } catch (e) { box.innerHTML = `<div class="blocked">${esc(e.message)}</div>`; }
+}
+async function bSave() {
+  try {
+    await api("/api/methods", {action: "add", method: bBody()});
+    toast("Saved, switched off. Find it under 'Switched off' and switch it on when you're happy with its test.");
+    document.getElementById("bName").value = ""; bRows.entry = []; bRows.exit = []; bAdd("entry");
+    document.getElementById("bResult").innerHTML = "";
+  } catch (e) { return toast(e.message, false); }
+  loadMethods();
+}
+
+// ---- results ----
+function lineChart(series, fmt) {
+  // series: [{name, color, points: [{d, v}]}]; draws a simple line chart with a legend.
+  const all = series.flatMap(s => s.points.map(p => p.v));
+  if (!all.length) return "";
+  const W = 640, Hh = 200, pad = 6, min = Math.min(...all), max = Math.max(...all), span = (max - min) || 1;
+  const n = Math.max(...series.map(s => s.points.length)) - 1 || 1;
+  const path = s => s.points.map((p, i) =>
+    `${(pad + i / n * (W - 2 * pad)).toFixed(1)},${(pad + (1 - (p.v - min) / span) * (Hh - 2 * pad)).toFixed(1)}`).join(" ");
+  const pts = series[0].points;
+  return `<div style="margin-top:10px">
+    <div class="note">${series.map(s => `<span style="color:${s.color}">&#9644;</span> ${esc(s.name)}`).join(" &nbsp; ")}</div>
+    <svg viewBox="0 0 ${W} ${Hh}" style="width:100%;height:auto;background:var(--chip);border-radius:8px" role="img"
+         aria-label="Line chart of account value over time">
+      ${series.map(s => `<polyline fill="none" stroke="${s.color}" stroke-width="2" points="${path(s)}"/>`).join("")}
+    </svg>
+    <div class="note" style="display:flex;justify-content:space-between">
+      <span>${esc(pts[0].d)}</span><span>low ${fmt(min)} · high ${fmt(max)}</span><span>${esc(pts[pts.length - 1].d)}</span>
+    </div></div>`;
+}
+
+function verdict(m) {
+  const a = m.agent, b = m.bench, beat = a.total_return > b.total_return;
+  const calmer = a.worst_drop > b.worst_drop * 0.6;  // drops are negative numbers
+  if (m.trades < 10) return ["warn", "Too few trades to judge."];
+  if (a.total_return <= 0) return ["bad", "Lost money. The agent's rules did not work here."];
+  if (beat) return ["ok", "Beat doing nothing."];
+  if (calmer) return ["warn", "Made money, but less than doing nothing. Its upside: much smaller drops along the way."];
+  return ["bad", "Did worse than doing nothing."];
+}
+
+async function loadResults() {
+  let r;
+  try { r = await api("/api/results"); } catch (e) { return toast(e.message, false); }
+  const p = r.practice;
+  const usd = (v) => v == null ? "-" : money(v);
+  let html = p.count ? `
+    <div class="grid" style="margin:10px 0">
+      <div><div class="note">Closed trades</div><div class="value" style="font-size:22px;font-weight:600">${p.count}</div></div>
+      <div><div class="note">Winners</div><div style="font-size:22px;font-weight:600">${p.win_rate == null ? "-" : Math.round(p.win_rate * 100) + "%"}</div></div>
+      <div><div class="note">Total profit / loss</div><div style="font-size:22px;font-weight:600" class="${cls(p.total_pnl_usd)}">${usd(p.total_pnl_usd)}</div></div>
+      <div><div class="note">Average win / average loss</div><div style="font-size:22px;font-weight:600"><span class="up">${usd(p.avg_win)}</span> / <span class="down">${usd(p.avg_loss)}</span></div></div>
+    </div>
+    <p class="note">Good sign: the average win is bigger than the average loss, so the agent can make money even if fewer than half of its trades win.</p>
+    <table style="margin-bottom:12px"><tr><th>Whose trades</th><th>Closed trades</th><th>Winners</th><th>Profit / loss</th></tr>
+      ${Object.entries(p.by_who).map(([who, w]) => `<tr><td>${esc(who)}</td><td>${w.trades}</td>
+        <td>${w.win_rate == null ? "-" : Math.round(w.win_rate * 100) + "%"}</td><td class="${cls(w.pnl)}">${usd(w.pnl)}</td></tr>`).join("")}
+    </table>
+    <div class="table-wrap"><table><tr><th>Closed</th><th>Asset</th><th>Method</th><th>Why it closed</th><th>Profit / loss</th></tr>
+      ${p.trades.slice(0, 20).map(t => `<tr><td>${esc(t.time.slice(0, 10))}</td><td>${esc(t.name)}<br><span class="note">${esc(t.market_name)}</span></td>
+        <td>${esc(t.method || "-")}</td><td class="note">${esc(t.reason)}</td>
+        <td class="${cls(t.pnl)}">${money(t.pnl, t.currency)}${t.return_pct == null ? "" : `<br><span class="note">${pct(t.return_pct)}</span>`}</td></tr>`).join("")}
+    </table></div>`
+    : `<p>No closed trades yet. Once you approve trades and they close, you'll see here how many won, the total profit or loss, and whether the wins are bigger than the losses.</p>`;
+  const accts = Object.entries(p.accounts).filter(([, a]) => a.points.length > 1);
+  if (accts.length) {
+    const colors = ["#2f6fed", "#0f8a4b", "#c4321c", "#9a6400"];
+    const base = accts.map(([m, a], i) => ({name: a.name, color: colors[i % 4],
+      points: a.points.map(x => ({d: x.d, v: x.v / a.points[0].v * 100}))}));
+    if (p.sp500.length > 1) base.push({name: "S&P 500 (doing nothing)", color: "#98a2b3",
+      points: p.sp500.map(x => ({d: x.d, v: x.v / p.sp500[0].v * 100}))});
+    html += `<h4 style="margin:16px 0 0">Account value since ${esc(p.since)} (start = 100)</h4>` + lineChart(base, v => v.toFixed(1));
+  } else {
+    html += `<p class="note">A chart of your account values appears here after a few days of using the app.</p>`;
+  }
+  document.getElementById("practice").innerHTML = html;
+  document.getElementById("track").innerHTML = trackHtml(r.track);
+  renderReport(r);
+}
+
+function trackHtml(t) {
+  if (!t || t.error) return `<p class="note">Couldn't read the track record${t ? ": " + esc(t.error) : ""}.</p>`;
+  if (!t.count) return `<p>No ideas written down yet. Each time the app looks for trade ideas (on Trade ideas, or in the daily check), they are recorded here and checked over the following weeks.</p>`;
+  const line = (name, x) => x.finished ? `<tr><td>${esc(name)}</td><td>${x.finished}</td><td>${Math.round(x.win_rate * 100)}%</td>
+      <td class="${cls(x.avg)}">${pct(x.avg * 100)}</td><td class="${cls(x.hold)}">${pct(x.hold * 100)}</td></tr>` : "";
+  const all = t.all;
+  const head = all.finished
+    ? `<div class="notice ${all.avg > Math.max(all.hold, 0) ? "ok" : "info"}" style="margin:10px 0">${all.finished} ideas finished:
+        ${Math.round(all.win_rate * 100)}% made money, ${pct(all.avg * 100)} per idea on average
+        (simply buying the same assets for the same days: ${pct(all.hold * 100)}).</div>`
+    : `<p class="note">${t.count} ideas recorded since ${esc(t.since)}. None has finished yet: each one is followed for about a month.</p>`;
+  const word = {target: "Reached take-profit", stop: "Safety net", time: "Month over", running: "Still running", waiting: "Waiting for prices"};
+  return head + (all.finished ? `<div class="table-wrap"><table><tr><th></th><th>Finished</th><th>Made money</th><th>Average per idea</th><th>Simply buying</th></tr>
+      ${line("All ideas", all)}${line("Strong ideas only (above your minimum score)", t.strong)}
+      ${Object.entries(t.markets).map(([m, x]) => line(m, x)).join("")}</table></div>` : "") + `
+    <details style="margin-top:8px"><summary>Latest ideas (${t.count} recorded, ${t.running} still running)</summary>
+      <div class="table-wrap"><table><tr><th>Date</th><th>Asset</th><th>Idea</th><th>What happened</th><th>Result</th></tr>
+      ${t.ideas.map(i => `<tr><td>${esc(i.date)}</td><td>${esc(i.name)}<br><span class="note">${esc(i.market_name)}</span></td>
+        <td>${i.side > 0 ? "Buy" : "Sell short"} · ${esc(i.method)}<br><span class="note">score ${i.score}</span></td>
+        <td class="note">${word[i.status] || esc(i.status)}${i.days ? ` after ${i.days} days` : ""}</td>
+        <td class="${cls(i.result)}">${i.result == null ? "-" : pct(i.result * 100)}</td></tr>`).join("")}
+      </table></div></details>`;
+}
+
+function renderReport(r) {
+  const s = r.report_status, btn = document.getElementById("reportBtn");
+  btn.disabled = s.running;
+  document.getElementById("reportText").textContent = s.running ? s.step + "..."
+    : s.error ? "Something went wrong: " + s.error : r.report ? "Last run " + r.report.created : "Takes about 10 seconds.";
+  if (s.running) { setTimeout(loadResults, 1000); return; }
+  if (!r.report) { document.getElementById("report").innerHTML = ""; return; }
+  document.getElementById("report").innerHTML = r.report.markets.map(m => {
+    if (!m.ok) return `<div class="card" style="margin-top:12px"><h3 style="margin:0">${esc(m.name)}</h3><p class="note">${esc(m.why)}</p></div>`;
+    const [kind, text] = verdict(m), a = m.agent, b = m.bench, c = m.currency;
+    return `<div class="card" style="margin-top:12px">
+      <div class="idea-head"><h3>${esc(m.name)}</h3><span class="chip">${esc(m.start)} to ${esc(m.end)} · ${m.years} years · ${m.assets} assets</span></div>
+      <div class="notice ${kind === "ok" ? "ok" : kind === "bad" ? "err" : "info"}" style="margin:10px 0">${esc(text)}</div>
+      <div class="table-wrap"><table>
+        <tr><th></th><th>Total gain</th><th>Per year</th><th>Worst drop</th></tr>
+        <tr><td><b>The agent</b></td><td class="${cls(a.total_return)}">${pct0(a.total_return)}</td><td>${pct0(a.per_year)}</td><td class="down">${pct0(a.worst_drop)}</td></tr>
+        <tr><td>${esc(m.bench_name)}</td><td class="${cls(b.total_return)}">${pct0(b.total_return)}</td><td>${pct0(b.per_year)}</td><td class="down">${pct0(b.worst_drop)}</td></tr>
+      </table></div>
+      <p class="note">${m.trades} trades, ${Math.round(m.win_rate * 100)}% winners. Average win ${money(m.avg_win, c)}, average loss ${money(m.avg_loss, c)}.
+        Held about ${Math.round(m.avg_days)} days each. On average only ${Math.round(m.avg_invested * 100)}% of the money was invested at a time; the rest sat in cash, because each trade risks just 1%.</p>
+      ${lineChart([{name: "The agent", color: "#2f6fed", points: m.chart.map(x => ({d: x.d, v: x.agent}))},
+                   {name: m.bench_name, color: "#98a2b3", points: m.chart.map(x => ({d: x.d, v: x.bench}))}], v => money(v, c))}
+      <details><summary>Which methods made or lost money</summary>
+        <table><tr><th>Method</th><th>Trades</th><th>Winners</th><th>Profit / loss</th></tr>
+        ${m.methods.map(x => `<tr><td>${esc(x.method)}</td><td>${x.trades}</td><td>${Math.round(x.wins / x.trades * 100)}%</td><td class="${cls(x.pnl)}">${money(x.pnl, c)}</td></tr>`).join("")}
+        </table></details>
+    </div>`;
+  }).join("") + `<p class="note" style="margin-top:12px">How this was tested: each day used only earlier prices. Trades filled at the closing price plus fees and slippage. Safety nets were checked on closing prices, and the daily loss limit was not applied. Past results don't guarantee future ones.</p>`;
+}
+
+async function runReport() {
+  try { await api("/api/report-card", {}); } catch (e) { return toast(e.message, false); }
+  loadResults();
+}
+
+// ---- history ----
+let historyRows = [];
+const H_WORD = {"OPEN": "Opened", "CLOSE": "Closed", "CLOSED AT BROKER": "Closed at broker", "ORDER SENT (waiting to fill)": "Order sent"};
+const hWhat = t => t.note.includes("did not fill") ? "Order cancelled" : H_WORD[t.action] || t.action;
+async function loadHistory() {
+  try { historyRows = await api("/api/history"); } catch (e) { return toast(e.message, false); }
+  renderHistory();
+}
+function renderHistory() {
+  // Every word typed must appear somewhere in the row (date, account, what, asset, details).
+  const words = document.getElementById("hSearch").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const alias = {"safety": "stop-loss", "stop": "stop-loss", "profit": "take-profit"};
+  const rows = historyRows.filter(t => {
+    const hay = [t.time.replace("T", " "), t.market, hWhat(t), t.name, t.symbol, t.note].join(" ").toLowerCase();
+    return words.every(w => hay.includes(w) || (alias[w] && hay.includes(alias[w])));
+  });
+  document.getElementById("hSearchInfo").textContent = words.length ? `${rows.length} of ${historyRows.length} entries match.` : "";
+  document.getElementById("historyList").innerHTML = !historyRows.length ? "<p>No trades yet.</p>" : !rows.length ? "<p>Nothing matches your search.</p>" : `<div class="table-wrap"><table>
+    <tr><th>When</th><th>Account</th><th>What</th><th>Asset</th><th>Amount</th><th>Price</th><th>Details</th></tr>
+    ${rows.map(t => `<tr><td>${esc(t.time.replace("T", " "))}</td><td>${esc(t.market)}</td>
+      <td>${esc(hWhat(t))}</td><td>${esc(t.name)}</td><td>${qty(Math.abs(t.qty))}</td>
+      <td>${t.price ? price(t.price) : "-"}</td><td class="note">${esc(t.note)}</td></tr>`).join("")}
+  </table></div>`;
+}
+
+loadOverview();
+loadSettings();
+loadIdeas().then(running => running && pollIdeas());
+// Heartbeat: tells the desktop app this window is still open.
+const ping = () => fetch("/api/ping").catch(() => {});
+ping(); setInterval(ping, 20000);
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "trader.dashboard", "--no-browser", "--port", "8766"],
+      "port": 8766,
+      "autoPort": false,
+      "url": "http://127.0.0.1:8766"
+    },
+    {
+      "name": "dashboard-uitest",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "trader.dashboard", "--no-browser", "--port", "8767"],
+      "env": {"TRADING_AGENT_HOME": "E:/trading-agent/tests/.uitest"},
+      "port": 8767,
+      "autoPort": false,
+      "url": "http://127.0.0.1:8767"
+    }
+  ]
+}

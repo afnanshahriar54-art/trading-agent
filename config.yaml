@@ -1,0 +1,52 @@
+# Trading agent configuration.
+# Phase 1: everything runs on historical data and a local paper broker. No real money.
+
+mode: review            # review = propose trades and ask you; auto = place them automatically
+live_trading: false     # must stay false in Phase 1; live brokers arrive in Phase 2/3
+
+history_years: 6        # how much daily history to download for backtests
+recent_days: 252        # "recent" window (~1 trading year) used to check a strategy still works
+fresh_signal_bars: 3    # a signal counts as a new trade idea if it flipped within this many bars
+min_trades: 6           # strategies with fewer backtest trades than this get low confidence
+
+# Each market's `broker:` is where its orders go:
+#   paper   = local simulated account (no keys needed)
+#   alpaca  = Alpaca paper account     (us_stocks)
+#   oanda   = OANDA practice account   (forex)
+#   binance = Binance spot testnet     (crypto)
+# Put the keys in .env (see .env.example), run `python -m trader check`, then switch.
+markets:
+  us_stocks:
+    broker: alpaca      # Alpaca paper account (connected 2026-10-28)
+    allow_short: false
+    fee_bps: 1          # commission + exchange fees, in basis points per side
+    slippage_bps: 3
+    symbols: [SPY, QQQ, AAPL, MSFT, NVDA, AMZN, GOOGL, META, JPM, XOM]
+  crypto:
+    broker: paper       # -> binance
+    allow_short: false
+    fee_bps: 10
+    slippage_bps: 10
+    symbols: [BTC-USD, ETH-USD, SOL-USD, BNB-USD, XRP-USD]
+  forex:
+    broker: paper       # -> oanda
+    allow_short: true
+    margin: true        # P&L-based accounting, converted from the quote currency to USD
+    fee_bps: 1
+    slippage_bps: 1
+    symbols: [EURUSD=X, GBPUSD=X, USDJPY=X, AUDUSD=X, USDCHF=X]
+  dse:                  # Dhaka Stock Exchange (needs the optional `bdshare` package)
+    broker: paper       # no broker API; Phase 3 adds a review-only mode
+    allow_short: false
+    fee_bps: 40
+    slippage_bps: 20
+    symbols: [GP, SQURPHARMA, BATBC, BEXIMCO, BRACBANK]
+
+risk:
+  starting_cash: 100000       # paper account size
+  risk_per_trade_pct: 1.0     # max % of equity lost if a trade hits its stop
+  max_position_pct: 20.0      # no single position larger than this % of equity
+  max_open_positions: 8
+  daily_loss_limit_pct: 3.0   # stop opening trades for the day after this drawdown
+  atr_stop_multiple: 2.5      # stop-loss distance = ATR x this
+  min_score: 55               # candidates scoring below this are never traded

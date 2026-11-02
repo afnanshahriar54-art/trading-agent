@@ -1,0 +1,27 @@
+.env
+data_cache/
+paper_accounts/
+reports/
+KILL_SWITCH
+.smoke/
+__pycache__/
+.venv/
+build/
+app.log
+.app_window/
+tests/.smoke/
+tests/.dashtest/
+tests/.brokertest/
+tests/.uitest/
+tests/.modestest/
+tests/.methodstest/
+tests/.tptest/
+tests/.closetest/
+
+# Private to this PC: your choices, AI model download, built installers
+settings.json
+ai_model/
+dist/
+installer/
+*.exe
+*.log
