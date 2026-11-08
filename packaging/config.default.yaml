@@ -35,6 +35,7 @@ markets:
     fee_bps: 1
     slippage_bps: 2     # spread buffer: wider at quiet hours and around news
     carry_pct_year: 2.0 # overnight financing (swap) on the trade's size, a cautious average
+    margin_rate: 0.0333 # deposit held per trade = size x this (30:1); OANDA reports its own per pair
     symbols: [EURUSD=X, GBPUSD=X, USDJPY=X, AUDUSD=X, USDCHF=X]
   dse:                  # Dhaka Stock Exchange (needs the optional `bdshare` package)
     broker: paper       # no broker API; Phase 3 adds a review-only mode

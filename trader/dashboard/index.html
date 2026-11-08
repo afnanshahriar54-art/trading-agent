@@ -233,6 +233,18 @@
       <p class="note">Report card, past ~4 years: <b>trailing at 1.5× R</b> did best. Crypto made +34% instead of +23% with a smaller worst drop (−15% instead of −19%); US stocks were about the same profit (+39%) with a slightly smaller worst drop. Break-even alone helped a little. The fixed take-profit above lowered profits.</p>
     </div>
 
+    <div class="card stCard" data-n="7" style="margin-top:16px">
+      <h2>7. Forex trade size (trade ideas and Auto mode)</h2>
+      <p class="note">How big the agent makes forex trades. Your own trades on the Charts page use the amount you type there.</p>
+      <div style="display:grid;gap:8px;margin-top:10px">
+        <label><input type="radio" name="fxMode" value="risk"> <b>By risk</b> (as before): sized so the safety net loses at most your "most a trade can lose" limit</label>
+        <label><input type="radio" name="fxMode" value="notional"> <b>Small fixed amount</b>: each forex trade is worth
+          $<input type="number" id="fxUsd" min="1" step="any" style="font:inherit;width:90px;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--text)">
+          <span class="fxPresets"></span></label>
+      </div>
+      <p class="note">A fixed amount is never allowed to risk more than the risk rule would. The broker holds only a small deposit (margin) per trade, about 3.3% of its size on the practice account.</p>
+    </div>
+
     <div class="actions" style="margin-top:16px">
       <button class="btn" onclick="stSave()">Save settings</button>
       <span id="stMsg" class="note"></span>
@@ -307,6 +319,9 @@
         </div>
         <label>Amount <span id="tpCur">($)</span> <input id="tpAmount" type="number" min="0" step="any" placeholder="suggested" oninput="tpQuoteSoon()"
                style="font:inherit;width:130px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--text)"></label>
+        <span style="display:flex;gap:4px" title="Small Trade Mode: quick amounts">
+          <button class="btn small ghost" onclick="tpPreset(5)">$5</button><button class="btn small ghost" onclick="tpPreset(10)">$10</button><button class="btn small ghost" onclick="tpPreset(25)">$25</button><button class="btn small ghost" onclick="tpPreset(50)">$50</button>
+        </span>
         <button class="btn small ghost" onclick="document.getElementById('tpAmount').value=''; tpQuote()">Use suggested size</button>
       </div>
       <div id="tpPreview" class="plan">Loading...</div>
@@ -782,6 +797,10 @@ async function loadSettings() {
   document.getElementById("prTrailDist").value = s.protect.trailing.distance;
   document.getElementById("prBe").checked = s.protect.breakeven.on;
   document.getElementById("prBeAt").value = s.protect.breakeven.at;
+  document.querySelectorAll('input[name="fxMode"]').forEach(r => r.checked = r.value === s.forex_size.mode);
+  document.getElementById("fxUsd").value = s.forex_size.usd;
+  document.querySelector("#settings .fxPresets").innerHTML = [5, 10, 25, 50].map(v =>
+    `<button type="button" class="btn small ghost" onclick="document.getElementById('fxUsd').value=${v};document.querySelector('input[name=fxMode][value=notional]').checked=true">$${v}</button>`).join(" ");
   stRender();
   if (d.checking) setTimeout(loadSettings, 2000);
 }
@@ -812,6 +831,7 @@ const ST_ELSEWHERE = [
   ["report card results performance history", "Results and report card: on the Results page.", "results"],
   ["odds chance practice runs simulation time machine", "Odds check: shown under every trade idea and in the Charts trade panel.", "ideas"],
   ["track record ideas log decisions", "Track record of trade ideas: on the Results page.", "results"],
+  ["small trade $5 $10 $25 $50 amount preset", "Small trades: preset buttons in the Charts trade panel; forex size for the agent is in Settings 7.", "charts"],
 ];
 function stFilter() {
   const q = document.getElementById("stSearch").value.trim().toLowerCase();
@@ -846,6 +866,8 @@ async function stSave() {
                   value: parseFloat(document.getElementById("tpValue").value)},
     protect: {trailing: {on: document.getElementById("prTrail").checked, distance: parseFloat(document.getElementById("prTrailDist").value)},
               breakeven: {on: document.getElementById("prBe").checked, at: parseFloat(document.getElementById("prBeAt").value)}},
+    forex_size: {mode: document.querySelector('input[name="fxMode"]:checked')?.value || "risk",
+                 usd: parseFloat(document.getElementById("fxUsd").value)},
   };
   if (mode === "auto" && stData.settings.mode !== "auto" &&
       !confirm("Auto mode: every day at the check time, the app will place and close practice trades by itself, following your rules. Turn it on?")) return;
@@ -1041,6 +1063,7 @@ async function tpQuote() {
     <p style="margin:0"><b>${buy ? "Buy" : "Sell short"}:</b> ${buy ? "you profit if the price rises." : "you profit if the price falls."}
       <span class="note">${q.live ? "Live price" : "Last price"} from ${esc(q.price_time)}.</span></p>
     ${outcome({...q, cur})}
+    ${q.forex ? forexBox(q.forex, q) : ""}
     <p class="note" style="margin-top:10px">Your limit per trade is ${money(q.max_risk, cur)} of possible loss (${q.risk_pct.toFixed(2)}% of the account used here).
       ${q.target ? `Take-profit ${esc(q.target_how)}.` : "Take-profit is off in Settings."}
       Account: ${esc(q.account)}.${q.live ? "" : " The market looks closed or delayed: a US order waits for the market to open; other practice trades fill at the last price."}</p>
@@ -1049,6 +1072,24 @@ async function tpQuote() {
       <ul style="margin:4px 0 0 18px;padding:0">${q.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}`;
   btn.disabled = !q.ok;
   btn.textContent = `${q.warnings.length ? "Place anyway" : "Place practice trade"}: ${buy ? "buy" : "sell short"} ${qty(q.qty)} ${q.units}`;
+}
+function tpPreset(v) {
+  document.getElementById("tpAmount").value = v;
+  tpQuote();
+}
+// Forex: units, real size, deposit (margin) and costs are different things; show each plainly.
+function forexBox(x, q) {
+  const row = (k, v, note = "") => `<tr><td>${k}</td><td><b>${v}</b></td><td class="note">${note}</td></tr>`;
+  return `<div class="tile" style="margin-top:10px"><div class="note"><b>Forex details</b></div>
+    <div class="table-wrap"><table style="margin-top:6px">
+      ${row("Units", `${qty(x.units)} ${esc(x.base)}`, `smallest allowed: ${qty(x.min_units)} (about ${money(x.smallest_usd)})`)}
+      ${row("Actual size", money(x.notional), "what the units are worth; never more than the amount you typed")}
+      ${row("If the safety net is hit", "-" + money(x.stop_loss), "before costs")}
+      ${row("Trading costs", money(x.costs), "spread and fees, in and out")}
+      ${row("Overnight financing", money(x.financing_day) + " a day", "while the trade stays open")}
+      ${row("Margin (deposit held)", money(x.margin), `${(x.margin_rate * 100).toFixed(2)}% of the size; this is NOT the trade's size`)}
+      ${row("Free margin now", money(x.margin_free), x.margin <= x.margin_free ? "enough" : "not enough")}
+    </table></div></div>`;
 }
 async function tpPlace() {
   if (!tpLast) return;

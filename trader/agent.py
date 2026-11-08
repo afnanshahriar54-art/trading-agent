@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from . import analyzer, data, methods, settings, track
+from . import analyzer, data, forex_size, methods, settings, track
 from .broker import PaperBroker
 from .live import BROKERS, BrokerError
 from .paths import HOME
@@ -27,6 +27,7 @@ def load_config(path: Path = ROOT / "config.yaml") -> dict:
     cfg["risk"].update(s["rules"])
     cfg["risk"]["take_profit"] = s["take_profit"]
     cfg["protect"] = s["protect"]
+    cfg["forex_size"] = s["forex_size"]
     return cfg
 
 
@@ -91,7 +92,8 @@ class Proposal:
                 f"score {c.score:.0f}, {c.view.strategy.name})")
 
 
-def propose(c: analyzer.Candidate, broker, risk: RiskManager, prices: dict, fxs: dict) -> Proposal:
+def propose(c: analyzer.Candidate, broker, risk: RiskManager, prices: dict, fxs: dict,
+            cfg: dict | None = None) -> Proposal:
     """Size a candidate against the broker's current state and run the risk checks."""
     a, market = c.analysis, c.market
     equity = broker.equity(prices, fxs)
@@ -101,7 +103,16 @@ def propose(c: analyzer.Candidate, broker, risk: RiskManager, prices: dict, fxs:
     if market in ("us_stocks", "dse"):
         qty = float(int(qty))  # whole shares
     elif broker.margin:
-        qty = float(int(qty // 1000) * 1000)  # forex trades in 1,000-unit micro lots (round down)
+        # Forex: the broker's own unit steps (down to 1 unit), rounded down. In "fixed dollar"
+        # mode your chosen amount sets the size, but never above what the 1% risk rule allows.
+        cfg = cfg or load_config()
+        mcfg = cfg["markets"][market]
+        spec = forex_size.spec_for(broker, c.symbol, mcfg)
+        units = forex_size.normalize(qty, spec)
+        fs = cfg.get("forex_size") or {}
+        if fs.get("mode") == "notional":
+            units = min(units, forex_size.units_for_usd(fs["usd"], a.price, a.fx, spec))
+        qty = float(units)
     try:
         qty = broker.round_qty(c.symbol, qty)  # exchange lot sizes (Binance)
     except BrokerError as e:
@@ -111,6 +122,12 @@ def propose(c: analyzer.Candidate, broker, risk: RiskManager, prices: dict, fxs:
     ok, why = risk.check_new_trade(c.score, len(broker.positions), equity, day_start, broker.cash, cost)
     if ok and qty <= 0:
         ok, why = False, "position size rounds to zero"
+    if ok and broker.margin:
+        need = forex_size.plan(qty, a.price, stop, a.fx, spec, mcfg).margin
+        free = forex_size.margin_available(broker, equity, prices, fxs,
+                                           lambda s: forex_size.spec_for(broker, s, mcfg))
+        if need > free:
+            ok, why = False, f"not enough free margin: {need:,.2f} needed, {free:,.2f} available"
     return Proposal(c, qty, stop, qty * abs(a.price - stop) * a.fx, qty * a.price * a.fx, cost, ok, why,
                     risk.target_price(a.price, stop, c.side, qty, a.fx))
 

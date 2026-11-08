@@ -119,6 +119,26 @@ Most days there will be few or no strong ideas. That's normal, and doing nothing
   (`reports/idea_log.jsonl`) and followed for about a month against the real prices, whether you took it or not.
   It shows how many made money and compares with simply buying the same assets.
 
+## Small trades (any amount)
+
+- **Charts page, trade panel:** quick buttons for **$5, $10, $25, $50**, or type any amount.
+  - US stocks: parts of a share from $1 (Alpaca's minimum). Short selling needs whole shares.
+  - Forex: down to **1 unit** of the base currency (EUR in EUR/USD, USD in USD/JPY).
+  - Crypto: small fractions. Dhaka shares: whole shares only.
+- **Forex preview** shows: units, actual size in dollars (never more than you typed: always
+  rounded down), the loss if the safety net is hit, trading costs in and out, overnight
+  financing per day, the **margin** (deposit the broker holds, about 3.3% of the size on the
+  practice account, *not* the trade's size), and your free margin.
+- **Refused, with the reason:** less than the pair's smallest trade, not enough free margin,
+  trading paused, a trade already open in that pair, broken prices.
+- **Going past your safety limits** (risk per trade, size, open trades, daily loss) shows a
+  warning; you can still place it after confirming.
+- **Trade ideas and Auto mode** (Settings, 7. Forex trade size): size forex trades by risk
+  (as before) or as a small fixed amount, e.g. $25. A fixed amount is never allowed to risk
+  more than the risk rule would.
+- With a **dollar take-profit** (e.g. $250), small trades can't realistically reach it, so it
+  acts like "off" for them. A take-profit "times the risk" scales with the trade instead.
+
 ## Your accounts
 
 | Market | Where trades go |

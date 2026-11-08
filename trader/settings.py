@@ -40,7 +40,11 @@ DEFAULTS = {
     # breakeven: once up `at` x R, the safety net moves to the buy price.
     # trailing: the safety net follows the best price, staying `distance` x R behind it.
     "protect": {"breakeven": {"on": False, "at": 1.0}, "trailing": {"on": False, "distance": 1.5}},
+    # How the agent sizes forex trades. "risk": by the 1% risk rule (as before). "notional": a fixed
+    # dollar size per trade (e.g. $25), still never more than the risk rule allows.
+    "forex_size": {"mode": "risk", "usd": 25.0},
 }
+FOREX_USD_LIMITS = (1.0, 1_000_000.0)
 PROTECT_LIMITS = {"at": (0.25, 5.0), "distance": (0.25, 5.0)}
 
 TAKE_PROFIT_LIMITS = {"risk": (0.5, 10.0), "percent": (0.5, 100.0), "amount": (1.0, 1_000_000.0)}
@@ -60,6 +64,7 @@ def load() -> dict:
         "methods": {**DEFAULTS["methods"], **saved.get("methods", {})},
         "take_profit": {**DEFAULTS["take_profit"], **saved.get("take_profit", {})},
         "protect": {k: {**DEFAULTS["protect"][k], **saved.get("protect", {}).get(k, {})} for k in DEFAULTS["protect"]},
+        "forex_size": {**DEFAULTS["forex_size"], **saved.get("forex_size", {})},
     }
 
 
@@ -131,6 +136,17 @@ def save(new: dict, markets: list[str]) -> dict:
             raise ValueError(f"The {'break-even' if key == 'breakeven' else 'trailing'} setting must be between {lo:g} and {hi:g}.")
         out[key] = {"on": bool(item.get("on")), field: v}
     s["protect"] = out
+    fs = new.get("forex_size", s["forex_size"])
+    if fs.get("mode") not in ("risk", "notional"):
+        raise ValueError("Choose how to size forex trades.")
+    try:
+        usd = float(fs.get("usd", s["forex_size"]["usd"]))
+    except (TypeError, ValueError):
+        raise ValueError("Enter a dollar amount for forex trades.")
+    lo, hi = FOREX_USD_LIMITS
+    if not lo <= usd <= hi:
+        raise ValueError(f"The forex trade amount must be between ${lo:g} and ${hi:,.0f}.")
+    s["forex_size"] = {"mode": fs["mode"], "usd": usd}
     FILE.write_text(json.dumps(s, indent=2))
     return s
 

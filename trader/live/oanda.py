@@ -34,7 +34,27 @@ class OandaPractice(LiveBroker):
         a = self._req("GET", "/summary")["account"]
         if a.get("currency") != fx.ACCOUNT_CCY:
             raise BrokerError(f"OANDA account currency is {a.get('currency')}; this agent expects {fx.ACCOUNT_CCY}")
+        self._margin_free = a.get("marginAvailable")
         return {"cash": float(a["balance"]), "equity": float(a["NAV"]), "day_start": None}
+
+    def instrument_spec(self, symbol: str):
+        """OANDA's trade-size rules for this pair: minimumTradeSize, tradeUnitsPrecision,
+        maximumOrderUnits and marginRate, from its instruments list (cached per session)."""
+        from decimal import Decimal
+        from ..forex_size import Spec
+        cache = self.__dict__.setdefault("_specs", {})
+        name = self.instrument(symbol)
+        if name not in cache:
+            i = self._req("GET", "/instruments", params={"instruments": name})["instruments"][0]
+            cache[name] = Spec(min_units=Decimal(i["minimumTradeSize"]), precision=int(i["tradeUnitsPrecision"]),
+                               max_units=Decimal(i["maximumOrderUnits"]), margin_rate=Decimal(i["marginRate"]))
+        return cache[name]
+
+    def margin_available(self) -> float:
+        self._state()
+        if getattr(self, "_margin_free", None) is None:
+            raise BrokerError("OANDA did not report free margin")
+        return float(self._margin_free)
 
     def _broker_positions(self) -> dict[str, tuple[float, float]]:
         out = {}
@@ -49,7 +69,7 @@ class OandaPractice(LiveBroker):
 
     def _submit(self, symbol, side, qty, stop, target=None, cid=None):
         order = {
-            "type": "MARKET", "instrument": self.instrument(symbol), "units": str(int(side * qty)),
+            "type": "MARKET", "instrument": self.instrument(symbol), "units": self._units(symbol, side * qty),
             "timeInForce": "FOK", "positionFill": "DEFAULT",
             # Safety net and take-profit live at OANDA, so they work while the app is off.
             "stopLossOnFill": {"price": self._price(symbol, stop)},
@@ -72,6 +92,14 @@ class OandaPractice(LiveBroker):
             return None
         state = r.json().get("order", {}).get("state")
         return {"FILLED": "filled", "PENDING": "open"}.get(state, "gone")
+
+    def _units(self, symbol: str, units: float) -> str:
+        """Units as OANDA wants them: a decimal string with at most tradeUnitsPrecision places."""
+        try:
+            places = self.instrument_spec(symbol).precision
+        except Exception:
+            places = 0
+        return f"{units:.{places}f}" if places else str(int(units))
 
     def _move_stop(self, symbol, stop):
         """Change the stop-loss on the open OANDA trade(s) in this instrument."""

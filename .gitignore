@@ -28,3 +28,5 @@ installer/
 tests/.amounttest/
 tests/.recoverytest/
 tests/.recoverytest/
+tests/.forextest/
+tests/.forextest/

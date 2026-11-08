@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from . import backtest, data, fx, methods, names
+from . import backtest, data, forex_size, fx, methods, names
 from . import indicators as ind
 from .protect import new_stop, price_exit
 from .analyzer import score_parts, total, by_score
@@ -235,7 +235,8 @@ def simulate(market: str, cfg: dict, progress=None, strategies: list[Strategy] |
             equity = broker.equity(last_price, fxs)
             stop = rm.stop_price(price, h.atr[i], side)
             qty = rm.size(equity, price, stop, fxs[s])
-            qty = float(int(qty)) if market in ("us_stocks", "dse") else float(int(qty // 1000) * 1000) if margin else qty
+            qty = (float(int(qty)) if market in ("us_stocks", "dse")
+                   else float(forex_size.normalize(qty, forex_size.spec_for(None, s, mcfg))) if margin else qty)
             cost = qty * price if side > 0 and not margin else 0.0
             ok, _ = rm.check_new_trade(sc, len(broker.positions), equity, equity, broker.cash, cost, ignore_pause=True)
             if ok and qty > 0:

@@ -21,7 +21,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pandas as pd
 
-from .. import agent, analyzer, builder, daily, data, fx, methods, names, odds, performance, protect, replay, settings, track
+from .. import agent, analyzer, builder, daily, data, forex_size, fx, methods, names, odds, performance, protect, replay, settings, track
 from .. import indicators as ind
 from ..broker import STATE_DIR
 from ..live import BrokerError
@@ -373,6 +373,9 @@ class App:
         equity = b.equity({symbol: price}, {symbol: f})
         stop = rm.stop_price(price, atr, side)
         suggested = rm.size(equity, price, stop, f)
+        if not all(map(math.isfinite, (price, atr, equity, f))) or price <= 0 or f <= 0:
+            raise BrokerError("The price or account numbers look broken right now. Try again in a minute.")
+        spec = forex_size.spec_for(b, symbol, mcfg) if margin else None
 
         def rounded(q: float) -> float:
             """The smallest steps each market really trades in."""
@@ -382,10 +385,16 @@ class App:
                 # Alpaca buys parts of a share (from $1), but sells short whole shares only.
                 return float(int(q)) if side < 0 else math.floor(q * 1e6) / 1e6
             if margin:
-                return float(int(q))              # forex: down to 1 unit
+                return float(forex_size.normalize(q, spec))   # forex: the broker's unit steps, rounded down
             return b.round_qty(symbol, q)
 
-        qty = rounded(amount / (price * f) if amount else suggested)
+        if margin and amount:  # forex: dollars -> units of the base currency, never above the amount
+            qty = float(forex_size.units_for_usd(amount, price, f, spec))
+        else:
+            qty = rounded(amount / (price * f) if amount else suggested)
+        fplan = forex_size.plan(qty, price, stop, f, spec, mcfg) if margin else None
+        free = (forex_size.margin_available(b, equity, {symbol: price}, {symbol: f},
+                                            lambda s: forex_size.spec_for(b, s, mcfg)) if margin else None)
         size, risk = qty * price * f, qty * abs(price - stop) * f
         cost = size if side > 0 and not margin else 0.0
         max_risk = equity * rm.cfg.risk_per_trade_pct / 100
@@ -400,11 +409,18 @@ class App:
         elif qty <= 0:
             ok, why = False, {"dse": "The Dhaka exchange only trades whole shares. Enter at least the price of one share.",
                               "us_stocks": ("Short selling needs at least one whole share." if side < 0
-                                            else "Alpaca's smallest trade is $1.")}.get(market, "That amount is too small for this market.")
+                                            else "Alpaca's smallest trade is $1."),
+                              "forex": (f"The smallest {names.symbol(symbol)} trade is {spec.min_units:f} "
+                                        f"unit{'' if spec.min_units == 1 else 's'}, about "
+                                        f"${fplan.smallest_usd:,.2f}. Enter at least that." if margin else "")
+                              }.get(market) or "That amount is too small for this market."
         elif market == "us_stocks" and side > 0 and not qty.is_integer() and size < 0.99:  # $1, less rounding
             ok, why = False, "Alpaca's smallest trade is $1."
         elif cost > b.cash:
             ok, why = False, f"Not enough cash in this account: {cost:,.2f} needed, {b.cash:,.2f} available."
+        elif margin and fplan.margin > free:
+            ok, why = False, (f"Not enough free margin: this trade needs a ${fplan.margin:,.2f} deposit, "
+                              f"${free:,.2f} is free. Close a trade or use a smaller amount.")
         warnings = []
         if ok:
             if risk > max_risk * 1.001:
@@ -420,7 +436,12 @@ class App:
             if market == "us_stocks" and not qty.is_integer() and mcfg.get("broker") == "alpaca":
                 warnings.append("Part of a share: Alpaca can't hold the safety net for it, so this app watches it "
                                 "(every 30 seconds while open, and at the daily check), not Alpaca around the clock.")
-        return {"ok": ok, "why": why, "warnings": warnings, "side": side, "qty": qty, "price": price,
+        forex_info = None
+        if margin:
+            forex_info = {**fplan.as_dict(), "margin_free": float(free), "margin_rate": float(spec.margin_rate),
+                          "min_units": float(spec.min_units), "presets": list(forex_size.PRESETS_USD),
+                          "base": fx.pair(symbol)[0]}
+        return {"ok": ok, "why": why, "warnings": warnings, "forex": forex_info, "side": side, "qty": qty, "price": price,
                 "price_time": when, "live": live,
                 "stop": stop, "size": size, "risk": risk, "risk_pct": risk / equity * 100 if equity else 0,
                 "suggested_size": rounded(suggested) * price * f, "max_risk": max_risk,

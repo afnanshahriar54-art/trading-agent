@@ -86,14 +86,41 @@ Settings (watchlists, brokers, fees, risk limits, mode) are in `config.yaml`.
 7. **Exits**: a position closes when its strategy no longer signals that direction or the
    stop is hit.
 
+## Forex sizing (`trader/forex_size.py`)
+
+Separate steps, each in one place:
+
+1. **Currency conversion:** `usd_per_unit(price, quote_to_usd)` = dollar value of one base
+   unit (EUR/USD 1.10 -> $1.10; USD/JPY -> $1; crosses via the quote currency's USD rate,
+   `fx.quote_to_usd`).
+2. **Quantity normalisation:** `normalize(units, spec)` rounds DOWN (Decimal, `ROUND_DOWN`) to
+   the broker's `tradeUnitsPrecision`, caps at `maximumOrderUnits`, and returns 0 below
+   `minimumTradeSize`. `units_for_usd(usd, ...)` = the most units worth no more than `usd`.
+3. **Instrument rules:** `spec_for(broker, symbol, mcfg)` uses `OandaPractice.instrument_spec`
+   (GET `/v3/accounts/{id}/instruments?instruments=EUR_USD`: `minimumTradeSize`,
+   `tradeUnitsPrecision`, `maximumOrderUnits`, `marginRate`), else the practice-account rules:
+   1 unit, whole units, `margin_rate` from config.yaml (0.0333 = 30:1).
+4. **Margin, separate from size:** `plan(...)` returns units, notional, margin = notional x
+   margin rate, safety-net loss, costs (fee + slippage, in and out), financing per day.
+   `margin_available` uses OANDA's `marginAvailable`, else equity minus margin held by open trades.
+5. **Risk validation and execution are unchanged:** `RiskManager` and `order_problem` check every
+   order; brokers journal orders before sending them (client order ids, reconciliation).
+
+Used by: `agent.propose` (trade ideas, auto mode; `settings.forex_size` = `risk` or `notional`
+with a dollar amount, and the notional size is capped at the risk-rule size), the dashboard's
+`manual_quote` / `manual_trade`, and the report card (`replay.simulate`). The old fixed
+1,000-unit lots are gone. Tests: `tests/forex_small_test.py`.
+
 ## Known limitations
 
 - Daily bars only; the agent runs when you run it. Scheduling comes later.
 - The adapters are tested against a fake API built from each broker's docs, not yet
   against real practice accounts. Run `check`, then a review-mode `run`, before using auto mode.
 - Binance testnet stops are only checked when the agent runs, not continuously.
-- On the local paper broker, forex margin requirements and overnight swap costs are not
-  modelled; on OANDA practice they are real.
+- On the local paper broker, forex margin is estimated at a fixed rate (config `margin_rate`)
+  and overnight financing is charged only in the report card, not on the paper account itself;
+  on OANDA practice both are real. Small-unit OANDA orders are tested against a fake API built
+  from OANDA's v20 docs, not yet against a real practice account.
 - Free DSE data covers only about 2 years, so DSE backtests have few trades and score low.
 - Real-money trading is disabled (`live_trading: false`, and no live URLs in the code).
 - Backtest results are not a forecast. Most strategies here only roughly match or trail
